@@ -22,7 +22,7 @@
 - 🤖 **Smart Automation**:
   - **Auto-Pause**: Automatically pause playback when you alt-tab out of the game.
   - **Auto-Switch**: Bring the game window to the foreground automatically when starting a song.
-  - **Background Play**: Supports sending inputs directly to game windows even when they are not in focus (might not work on all games).
+  - **Background Play**: Supports sending inputs directly to game windows even when they are not in focus (may not work on all games).
 
 ## 🚀 Getting Started
 
@@ -35,7 +35,7 @@
 
 1. Download the latest release from the [Releases](https://github.com/tigurand/PlayFlowMIDI/releases) page.
 2. Extract the ZIP file to a folder of your choice.
-3. Run `PlayFlowMIDI.exe`.
+3. Run `PlayFlowMIDI.exe` (may require Administrator privileges).
 
 ## 📖 How to Use
 
