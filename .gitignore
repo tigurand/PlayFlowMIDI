@@ -1,0 +1,44 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build Results
+bin/
+obj/
+
+# Rider / JetBrains
+.idea/
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# NuGet
+packages/
+*.nupkg
+.nuget/
+
+# Publish
+publish/
+
+# Test Results
+TestResults/
+
+# DotCover
+*.dotCover
+
+# Coverlet
+coverage/
+
+# Temporary Files
+*.tmp
+*.cache
