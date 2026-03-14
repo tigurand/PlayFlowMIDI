@@ -823,6 +823,12 @@ namespace PlayFlowMIDI
                 IntPtr foregroundHwnd = GetForegroundWindow();
                 IntPtr target = (_targetHwnd != IntPtr.Zero && foregroundHwnd != _targetHwnd) ? _targetHwnd : IntPtr.Zero;
 
+                if (profileName == "Where Winds Meet")
+                {
+                    _inputQueue.Add((keyToPress, target, null));
+                    return;
+                }
+
                 bool holdNotes = _config.Settings.HoldNotes;
 
                 long now = Stopwatch.GetTimestamp();
@@ -891,6 +897,9 @@ namespace PlayFlowMIDI
                 _outputDevice.SendEvent(new NoteOffEvent((SevenBitNumber)noteNumber, (SevenBitNumber)0));
                 return;
             }
+
+            string profileName = _config.LastSelectedProfile;
+            if (profileName == "Where Winds Meet") return;
 
             if (!_config.Settings.HoldNotes) 
             {
