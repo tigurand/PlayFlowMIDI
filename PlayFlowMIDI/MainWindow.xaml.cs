@@ -351,13 +351,37 @@ namespace PlayFlowMIDI
 
                 var trackChunks = GetEffectiveTrackChunks(rawMidiFile);
 
-                // Group notes by pitch and channel to resolve overlaps across all tracks
-                var notesWithTrack = new List<(Note Note, int TrackIndex)>();
-                for (int i = 0; i < trackChunks.Count; i++)
+                // Process each track individually to resolve overlapping notes of same pitch and channel
+                // This preserves layering across different tracks while fixing overlapping notes within a track
+                foreach (var trackChunk in trackChunks)
                 {
-                    foreach (var note in trackChunks[i].GetNotes())
+                    using (var notesManager = trackChunk.ManageNotes())
                     {
-                        notesWithTrack.Add(((Note)note.Clone(), i));
+                        var notes = notesManager.Objects;
+                        var processedNotes = new List<Note>();
+
+                        foreach (var group in notes.GroupBy(n => new { n.NoteNumber, n.Channel }))
+                        {
+                            var sortedGroup = group.OrderBy(n => n.Time).ToList();
+                            for (int i = 0; i < sortedGroup.Count; i++)
+                            {
+                                var current = sortedGroup[i];
+                                if (i < sortedGroup.Count - 1)
+                                {
+                                    var next = sortedGroup[i + 1];
+                                    if (current.Time + current.Length > next.Time)
+                                    {
+                                        // Truncate current note so it ends when the next one starts
+                                        long newLength = next.Time - current.Time;
+                                        current.Length = Math.Max(0, newLength);
+                                    }
+                                }
+                                if (current.Length > 0) processedNotes.Add(current);
+                            }
+                        }
+
+                        notes.Clear();
+                        notes.Add(processedNotes);
                     }
                 }
 
@@ -366,38 +390,19 @@ namespace PlayFlowMIDI
                 var profile = _config.Profiles.FirstOrDefault(p => p.Name == profileName);
                 if (_config.Settings.AutoAdapt15Keys && profile?.SelectedMode == "15")
                 {
-                    int root = DetectMajorKey(notesWithTrack.Select(n => n.Note));
-                    foreach (var nt in notesWithTrack)
+                    var allNotes = trackChunks.SelectMany(t => t.GetNotes()).ToList();
+                    int root = DetectMajorKey(allNotes);
+                    foreach (var trackChunk in trackChunks)
                     {
-                        if (nt.Note.Channel != 9) // Skip percussion channel
+                        using (var notesManager = trackChunk.ManageNotes())
                         {
-                            nt.Note.NoteNumber = (Melanchall.DryWetMidi.Common.SevenBitNumber)FoldTo15KeyScale(nt.Note.NoteNumber, root);
-                        }
-                    }
-                }
-
-                var processedNotesWithTrack = new List<(Note Note, int TrackIndex)>();
-                foreach (var group in notesWithTrack.GroupBy(n => new { n.Note.NoteNumber, n.Note.Channel }))
-                {
-                    var sortedGroup = group.OrderBy(n => n.Note.Time).ToList();
-                    for (int i = 0; i < sortedGroup.Count; i++)
-                    {
-                        var current = sortedGroup[i];
-                        if (i < sortedGroup.Count - 1)
-                        {
-                            var next = sortedGroup[i + 1];
-                            if (current.Note.Time + current.Note.Length > next.Note.Time)
+                            foreach (var note in notesManager.Objects)
                             {
-                                // Truncate current note so it ends when the next one starts
-                                long newLength = next.Note.Time - current.Note.Time;
-                                if (newLength < 0) newLength = 0;
-                                current.Note.Length = newLength;
+                                if (note.Channel != 9) // Skip percussion channel
+                                {
+                                    note.NoteNumber = (Melanchall.DryWetMidi.Common.SevenBitNumber)FoldTo15KeyScale(note.NoteNumber, root);
+                                }
                             }
-                        }
-                        
-                        if (current.Note.Length > 0)
-                        {
-                            processedNotesWithTrack.Add(current);
                         }
                     }
                 }
@@ -415,31 +420,28 @@ namespace PlayFlowMIDI
                     }
                 }
 
-                // Add effective track chunks (split if necessary) with meta events only first
-                foreach (var trackChunk in trackChunks)
+                // Add track chunks with their meta events and filtered notes
+                for (int i = 0; i < trackChunks.Count; i++)
                 {
-                    // Get all events except notes, preserving absolute timing
+                    var trackChunk = trackChunks[i];
+                    
+                    // Always include non-note events to preserve tempo map and duration
                     var nonNoteEvents = trackChunk.GetTimedEvents()
                         .Where(te => !(te.Event is NoteOnEvent || te.Event is NoteOffEvent))
                         .ToList();
                     
-                    _currentMidiFile.Chunks.Add(nonNoteEvents.ToTrackChunk());
-                }
-
-                // Add the processed notes back to their respective tracks, filtering out disabled ones
-                var newTrackChunks = _currentMidiFile.GetTrackChunks().ToList();
-                for (int i = 0; i < trackChunks.Count; i++)
-                {
-                    if (IsTrackDisabled(song, trackChunks[i], i)) continue;
-
-                    var trackNotes = processedNotesWithTrack.Where(n => n.TrackIndex == i).Select(n => n.Note).ToList();
-                    if (trackNotes.Count > 0)
+                    var newTrackChunk = nonNoteEvents.ToTrackChunk();
+                    
+                    // Only add notes if the track is not disabled
+                    if (!IsTrackDisabled(song, trackChunk, i))
                     {
-                        using (var notesManager = newTrackChunks[i].ManageNotes())
+                        using (var notesManager = newTrackChunk.ManageNotes())
                         {
-                            notesManager.Objects.Add(trackNotes);
+                            notesManager.Objects.Add(trackChunk.GetNotes());
                         }
                     }
+                    
+                    _currentMidiFile.Chunks.Add(newTrackChunk);
                 }
                 
                 _playback = _currentMidiFile.GetPlayback();
@@ -1533,12 +1535,18 @@ namespace PlayFlowMIDI
                     var newChunks = new List<TrackChunk>();
                     var metaEvents = channelGroups.FirstOrDefault(g => g.Key == -1)?.ToList() ?? new List<TimedEvent>();
 
+                    bool isFirstTrack = true;
                     foreach (var group in channelGroups)
                     {
                         if (group.Key == -1) continue;
 
-                        var combinedEvents = metaEvents.Concat(group).OrderBy(e => e.Time);
+                        // Only put meta events in the first track to avoid duplication and duration issues
+                        var combinedEvents = isFirstTrack 
+                            ? metaEvents.Concat(group).OrderBy(e => e.Time)
+                            : group.OrderBy(e => e.Time);
+                        
                         newChunks.Add(combinedEvents.ToTrackChunk());
+                        isFirstTrack = false;
                     }
 
                     if (newChunks.Count > 0)
