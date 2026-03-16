@@ -99,6 +99,21 @@ namespace PlayFlowMIDI
             _isLoading = false;
             SortPlaylist();
 
+            string lastPath = _config.Main.LastPlayedSongPath;
+
+            ReloadSongs();
+
+            if (!string.IsNullOrEmpty(lastPath))
+            {
+                var lastSong = _masterPlaylist.FirstOrDefault(s => s.FilePath.Equals(lastPath, StringComparison.OrdinalIgnoreCase));
+                if (lastSong != null)
+                {
+                    PlaylistListView.SelectedItem = lastSong;
+                    PlaylistListView.ScrollIntoView(lastSong);
+                    _ = StartPlayback(lastSong, false);
+                }
+            }
+
             _ = MaybeAutoCheckUpdates();
 
             try
@@ -114,6 +129,7 @@ namespace PlayFlowMIDI
 
             this.Closed += (s, e) => 
             {
+                SaveConfig();
                 _outputDevice?.Dispose();
                 _midiInputDevice?.Dispose();
             };
@@ -320,7 +336,7 @@ namespace PlayFlowMIDI
 
         private async System.Threading.Tasks.Task StartPlayback(MidiSong song, bool start = true)
         {
-            StopPlayback();
+            StopPlayback(false);
 
             if (!File.Exists(song.FilePath)) return;
 
@@ -544,7 +560,7 @@ namespace PlayFlowMIDI
 
         private void StopButton_Click(object sender, RoutedEventArgs e)
         {
-            StopPlayback();
+            StopPlayback(false);
         }
 
         private async void PrevButton_Click(object sender, RoutedEventArgs e)
@@ -559,7 +575,7 @@ namespace PlayFlowMIDI
                 {
                     PlaylistListView.SelectedIndex--;
                     var song = PlaylistListView.SelectedItem as MidiSong;
-                    if (song != null) await StartPlayback(song);
+                    if (song != null) await StartPlayback(song, _isPlaying);
                 }
             }
         }
@@ -586,7 +602,7 @@ namespace PlayFlowMIDI
                 }
 
                 var song = PlaylistListView.SelectedItem as MidiSong;
-                if (song != null) await StartPlayback(song);
+                if (song != null) await StartPlayback(song, _isPlaying);
             }
         }
 
@@ -617,7 +633,7 @@ namespace PlayFlowMIDI
                 PlaylistListView.SelectedIndex = index;
                 PlaylistListView.ScrollIntoView(PlaylistListView.SelectedItem);
                 var song = PlaylistListView.SelectedItem as MidiSong;
-                if (song != null) await StartPlayback(song);
+                if (song != null) await StartPlayback(song, _isPlaying);
             }
         }
 
@@ -652,7 +668,7 @@ namespace PlayFlowMIDI
                 PlaylistListView.SelectedIndex = index;
                 PlaylistListView.ScrollIntoView(PlaylistListView.SelectedItem);
                 var song = PlaylistListView.SelectedItem as MidiSong;
-                if (song != null) await StartPlayback(song);
+                if (song != null) await StartPlayback(song, _isPlaying);
             }
         }
 
@@ -1187,6 +1203,15 @@ namespace PlayFlowMIDI
             _config.Main.FolderPath = FolderPathTextBox.Text;
             _config.Main.SortByIndex = SortByComboBox.SelectedIndex;
             _config.Main.SortAscending = SortDirectionButton.Content.ToString() == "▲";
+            
+            if (_currentPlayingSong != null)
+            {
+                _config.Main.LastPlayedSongPath = _currentPlayingSong.FilePath;
+            }
+            else if (_playback == null && PlaylistListView.SelectedItem is MidiSong selected)
+            {
+                _config.Main.LastPlayedSongPath = selected.FilePath;
+            }
             
             if (PlayOnceRadio.IsChecked == true) _config.Main.PlaybackMode = "PlayOnce";
             else if (RepeatSongRadio.IsChecked == true) _config.Main.PlaybackMode = "RepeatSong";

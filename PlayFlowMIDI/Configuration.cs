@@ -54,6 +54,7 @@ namespace PlayFlowMIDI
         public int SortByIndex { get; set; } = 0;
         public bool SortAscending { get; set; } = true;
         public string PlaybackMode { get; set; } = "PlayOnce"; // PlayOnce, RepeatSong, RepeatPlaylist, RandomPlaylist
+        public string LastPlayedSongPath { get; set; } = string.Empty;
         public List<MidiSongConfig> Playlist { get; set; } = new();
     }
 
