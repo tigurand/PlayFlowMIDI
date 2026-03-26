@@ -1158,9 +1158,11 @@ namespace PlayFlowMIDI
             }
 
             ProfileList.Items.Clear();
+            ActiveProfileComboBox.Items.Clear();
             foreach (var p in _config.Profiles)
             {
                 ProfileList.Items.Add(new ListBoxItem { Content = p.Name });
+                ActiveProfileComboBox.Items.Add(new ComboBoxItem { Content = p.Name });
             }
 
             foreach (var item in ProfileList.Items)
@@ -1171,7 +1173,17 @@ namespace PlayFlowMIDI
                     break;
                 }
             }
+
+            foreach (var item in ActiveProfileComboBox.Items)
+            {
+                if (item is ComboBoxItem cbi && cbi.Content.ToString() == _config.LastSelectedProfile)
+                {
+                    ActiveProfileComboBox.SelectedItem = item;
+                    break;
+                }
+            }
             if (ProfileList.SelectedIndex == -1 && ProfileList.Items.Count > 0) ProfileList.SelectedIndex = 0;
+            if (ActiveProfileComboBox.SelectedIndex == -1 && ActiveProfileComboBox.Items.Count > 0) ActiveProfileComboBox.SelectedIndex = 0;
 
             var profile = _config.Profiles.FirstOrDefault(p => p.Name == _config.LastSelectedProfile);
             if (profile != null)
@@ -1180,7 +1192,6 @@ namespace PlayFlowMIDI
                 SwitchToWindowCheck.IsChecked = profile.SwitchToWindow;
                 AutoPauseCheck.IsChecked = profile.AutoPause;
 
-                ActiveProfileTextBlock.Text = profile.Name;
                 if (profile.SelectedMode == "37") MainMode37.IsChecked = true;
                 else if (profile.SelectedMode == "36") MainMode36.IsChecked = true;
                 else if (profile.SelectedMode == "15") MainMode15.IsChecked = true;
@@ -2063,9 +2074,33 @@ namespace PlayFlowMIDI
             {
                 profile.Name = newName;
                 selectedItem.Content = newName;
-                ActiveProfileTextBlock.Text = newName;
+                
+                foreach (var item in ActiveProfileComboBox.Items)
+                {
+                    if (item is ComboBoxItem cbi && cbi.Content.ToString() == oldName)
+                    {
+                        cbi.Content = newName;
+                        break;
+                    }
+                }
+
                 _config.LastSelectedProfile = newName;
                 _config.Save(); 
+            }
+        }
+
+        private void ActiveProfileComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isLoading || ActiveProfileComboBox.SelectedItem is not ComboBoxItem selectedItem) return;
+            string profileName = selectedItem.Content?.ToString() ?? "";
+
+            foreach (var item in ProfileList.Items)
+            {
+                if (item is ListBoxItem lbi && lbi.Content.ToString() == profileName)
+                {
+                    ProfileList.SelectedItem = item;
+                    break;
+                }
             }
         }
 
@@ -2115,7 +2150,15 @@ namespace PlayFlowMIDI
                 SwitchToWindowCheck.IsChecked = profile.SwitchToWindow;
                 AutoPauseCheck.IsChecked = profile.AutoPause;
 
-                ActiveProfileTextBlock.Text = profile.Name;
+                foreach (var item in ActiveProfileComboBox.Items)
+                {
+                    if (item is ComboBoxItem cbi && cbi.Content.ToString() == profile.Name)
+                    {
+                        ActiveProfileComboBox.SelectedItem = item;
+                        break;
+                    }
+                }
+
                 if (profile.SelectedMode == "37") { Mode37.IsChecked = true; MainMode37.IsChecked = true; }
                 else if (profile.SelectedMode == "36") { Mode36.IsChecked = true; MainMode36.IsChecked = true; }
                 else if (profile.SelectedMode == "15") { Mode15.IsChecked = true; MainMode15.IsChecked = true; }
