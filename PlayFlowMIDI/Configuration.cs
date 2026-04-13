@@ -53,7 +53,8 @@ namespace PlayFlowMIDI
         public string FolderPath { get; set; } = string.Empty;
         public int SortByIndex { get; set; } = 0;
         public bool SortAscending { get; set; } = true;
-        public string PlaybackMode { get; set; } = "PlayOnce"; // PlayOnce, RepeatSong, RepeatPlaylist, RandomPlaylist
+        public string PlaybackMode { get; set; } = "PlayOnce"; // PlayOnce, RepeatSong, RepeatPlaylist
+        public bool Shuffle { get; set; } = false;
         public string LastPlayedSongPath { get; set; } = string.Empty;
         public List<MidiSongConfig> Playlist { get; set; } = new();
     }
@@ -89,6 +90,8 @@ namespace PlayFlowMIDI
         public string MidiInputDevice { get; set; } = string.Empty;
         public double Speed { get; set; } = 1.0;
         public int Pitch { get; set; } = 0;
+        public bool NotificationsEnabled { get; set; } = true;
+        public string NotificationPosition { get; set; } = "BottomRight"; // TopRight, BottomRight, TopLeft, BottomLeft
     }
 
     public class ProfileConfig

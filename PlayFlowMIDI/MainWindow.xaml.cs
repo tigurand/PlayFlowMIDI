@@ -51,12 +51,15 @@ namespace PlayFlowMIDI
         private int _currentTranspose = 0;
         private bool _isPlaying = false;
         private bool _isUserDraggingSlider = false;
+        private bool _isProgrammaticSliderUpdate = false;
         private bool _isAutoPaused = false;
         private DispatcherTimer? _uiTimer;
         private MidiSong? _currentPlayingSong;
         private List<int> _shuffleIndices = new();
         private List<int> _previousShuffle = new();
         private int _shufflePosition = -1;
+
+        private string? _lastNotifiedSongPath = null;
 
         private const string RepoOwner = "tigurand";
         private const string RepoName = "PlayFlowMIDI";
@@ -170,7 +173,9 @@ namespace PlayFlowMIDI
                     var duration = _playback.GetDuration<MetricTimeSpan>();
 
                     PlaybackSlider.Maximum = duration.TotalMicroseconds;
+                    _isProgrammaticSliderUpdate = true;
                     PlaybackSlider.Value = currentTime.TotalMicroseconds;
+                    _isProgrammaticSliderUpdate = false;
 
                     PlaybackTimeText.Text = $"{(int)currentTime.Minutes}:{currentTime.Seconds:D2} / {(int)duration.Minutes}:{duration.Seconds:D2}";
                 }
@@ -195,7 +200,10 @@ namespace PlayFlowMIDI
                 if (selectedSong != null)
                 {
                     _isPreviewMode = isPreview;
-                    await StartPlayback(selectedSong);
+                    MetricTimeSpan? sliderStart = PlaybackSlider.Value > 0
+                        ? new MetricTimeSpan((long)PlaybackSlider.Value)
+                        : null;
+                    await StartPlayback(selectedSong, startTime: sliderStart);
                 }
             }
             else
@@ -203,11 +211,12 @@ namespace PlayFlowMIDI
                 if (_isPreviewMode != isPreview)
                 {
                     var currentSong = _currentPlayingSong;
+                    var savedPosition = _playback.GetCurrentTime<MetricTimeSpan>();
                     StopPlayback(false);
                     if (currentSong != null)
                     {
                         _isPreviewMode = isPreview;
-                        await StartPlayback(currentSong);
+                        await StartPlayback(currentSong, startTime: savedPosition);
                     }
                     return;
                 }
@@ -233,6 +242,9 @@ namespace PlayFlowMIDI
                         if (previewBtn != null) previewBtn.Content = "⏸";
                     }
                     else PlayPauseButton.Content = "⏸";
+
+                    if (_currentPlayingSong != null)
+                        ShowSongNotification(_currentPlayingSong);
                 }
             }
         }
@@ -334,7 +346,7 @@ namespace PlayFlowMIDI
             }
         }
 
-        private async System.Threading.Tasks.Task StartPlayback(MidiSong song, bool start = true)
+        private async System.Threading.Tasks.Task StartPlayback(MidiSong song, bool start = true, MetricTimeSpan? startTime = null)
         {
             StopPlayback(false);
 
@@ -469,8 +481,19 @@ namespace PlayFlowMIDI
 
                 var duration = _playback.GetDuration<MetricTimeSpan>();
                 PlaybackSlider.Maximum = duration.TotalMicroseconds;
-                PlaybackSlider.Value = 0;
-                PlaybackTimeText.Text = $"0:00 / {(int)duration.Minutes}:{duration.Seconds:D2}";
+                _isProgrammaticSliderUpdate = true;
+                if (startTime != null && startTime.TotalMicroseconds > 0)
+                {
+                    _playback.MoveToTime(startTime);
+                    PlaybackSlider.Value = (double)startTime.TotalMicroseconds;
+                    PlaybackTimeText.Text = $"{(int)startTime.Minutes}:{startTime.Seconds:D2} / {(int)duration.Minutes}:{duration.Seconds:D2}";
+                }
+                else
+                {
+                    PlaybackSlider.Value = 0;
+                    PlaybackTimeText.Text = $"0:00 / {(int)duration.Minutes}:{duration.Seconds:D2}";
+                }
+                _isProgrammaticSliderUpdate = false;
                 PlayingSongTitle.Text = song.Title;
 
                 if (start)
@@ -479,7 +502,7 @@ namespace PlayFlowMIDI
                     _playback.Start();
                     _isPlaying = true;
                     _isAutoPaused = false;
-                    
+
                     if (_isPreviewMode)
                     {
                         var previewBtn = (System.Windows.Controls.Button)FindName("PreviewButton");
@@ -488,6 +511,16 @@ namespace PlayFlowMIDI
                     else
                     {
                         PlayPauseButton.Content = "⏸";
+                    }
+
+                    bool isRepeatSongLoop = _config.Main.PlaybackMode == "RepeatSong"
+                        && _lastNotifiedSongPath != null
+                        && _lastNotifiedSongPath == song.FilePath;
+
+                    if (!isRepeatSongLoop)
+                    {
+                        _lastNotifiedSongPath = song.FilePath;
+                        ShowSongNotification(song);
                     }
                 }
                 else
@@ -504,8 +537,10 @@ namespace PlayFlowMIDI
             }
         }
 
-        private void StopPlayback(bool resetSongInfo = true)
+        private void StopPlayback(bool resetSongInfo = true, bool userInitiated = false)
         {
+            if (userInitiated) _lastNotifiedSongPath = null;
+
             if (_playback != null)
             {
                 _playback.EventPlayed -= OnEventPlayed;
@@ -525,13 +560,17 @@ namespace PlayFlowMIDI
             if (resetSongInfo)
             {
                 PlayingSongTitle.Text = "No song playing";
+                _isProgrammaticSliderUpdate = true;
                 PlaybackSlider.Value = 0;
+                _isProgrammaticSliderUpdate = false;
                 PlaybackTimeText.Text = "0:00 / 0:00";
                 _currentPlayingSong = null;
             }
             else
             {
+                _isProgrammaticSliderUpdate = true;
                 PlaybackSlider.Value = 0;
+                _isProgrammaticSliderUpdate = false;
                 if (_playback == null && _currentPlayingSong != null)
                 {
                     PlaybackTimeText.Text = $"0:00 / {_currentPlayingSong.Duration}";
@@ -560,12 +599,12 @@ namespace PlayFlowMIDI
 
         private void StopButton_Click(object sender, RoutedEventArgs e)
         {
-            StopPlayback(false);
+            StopPlayback(false, userInitiated: true);
         }
 
         private async void PrevButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_config.Main.PlaybackMode == "RandomPlaylist")
+            if (ShuffleCheckBox.IsChecked == true)
             {
                 await PlayPreviousRandom();
             }
@@ -582,7 +621,7 @@ namespace PlayFlowMIDI
 
         private async void NextButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_config.Main.PlaybackMode == "RandomPlaylist")
+            if (ShuffleCheckBox.IsChecked == true)
             {
                 await PlayNextRandom();
             }
@@ -713,10 +752,22 @@ namespace PlayFlowMIDI
 
         private void PlaybackSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            if (_isUserDraggingSlider && _playback != null)
+            if (_isProgrammaticSliderUpdate) return;
+
+            var time = new MetricTimeSpan((long)PlaybackSlider.Value);
+
+            if (_playback != null)
             {
-                var time = new MetricTimeSpan((long)PlaybackSlider.Value);
                 var duration = _playback.GetDuration<MetricTimeSpan>();
+                PlaybackTimeText.Text = $"{(int)time.Minutes}:{time.Seconds:D2} / {(int)duration.Minutes}:{duration.Seconds:D2}";
+                if (!_isUserDraggingSlider)
+                {
+                    _playback.MoveToTime(time);
+                }
+            }
+            else if (PlaybackSlider.Maximum > 0)
+            {
+                var duration = new MetricTimeSpan((long)PlaybackSlider.Maximum);
                 PlaybackTimeText.Text = $"{(int)time.Minutes}:{time.Seconds:D2} / {(int)duration.Minutes}:{duration.Seconds:D2}";
             }
         }
@@ -734,11 +785,6 @@ namespace PlayFlowMIDI
                 {
                     await System.Threading.Tasks.Task.Delay(1000);
                     NextButton_Click(this, new RoutedEventArgs());
-                }
-                else if (mode == "RandomPlaylist")
-                {
-                    await System.Threading.Tasks.Task.Delay(1000);
-                    await PlayNextRandom();
                 }
                 else // PlayOnce
                 {
@@ -1100,8 +1146,9 @@ namespace PlayFlowMIDI
                 case "PlayOnce": PlayOnceRadio.IsChecked = true; break;
                 case "RepeatSong": RepeatSongRadio.IsChecked = true; break;
                 case "RepeatPlaylist": RepeatPlaylistRadio.IsChecked = true; break;
-                case "RandomPlaylist": RandomPlaylistRadio.IsChecked = true; break;
             }
+            
+            ShuffleCheckBox.IsChecked = _config.Main.Shuffle;
 
             ShortcutPlayPause.Text = _config.Settings.ShortcutPlayPause;
             ShortcutStop.Text = _config.Settings.ShortcutStop;
@@ -1131,6 +1178,22 @@ namespace PlayFlowMIDI
 
             AlwaysOnTopCheck.IsChecked = _config.Settings.AlwaysOnTop;
             this.Topmost = AlwaysOnTopCheck.IsChecked == true;
+
+            var notifCheck = (System.Windows.Controls.CheckBox)this.FindName("NotificationsEnabledCheck");
+            if (notifCheck != null) notifCheck.IsChecked = _config.Settings.NotificationsEnabled;
+            var notifPos = (System.Windows.Controls.ComboBox)this.FindName("NotificationPositionComboBox");
+            if (notifPos != null)
+            {
+                foreach (System.Windows.Controls.ComboBoxItem item in notifPos.Items)
+                {
+                    if (item.Tag?.ToString() == _config.Settings.NotificationPosition)
+                    {
+                        notifPos.SelectedItem = item;
+                        break;
+                    }
+                }
+                if (notifPos.SelectedIndex < 0) notifPos.SelectedIndex = 3; // default BottomRight
+            }
 
             var autoUpdateCheckApply = (System.Windows.Controls.CheckBox)this.FindName("AutoUpdateCheck");
             if (autoUpdateCheckApply != null) autoUpdateCheckApply.IsChecked = _config.Settings.AutoUpdateEnabled;
@@ -1227,7 +1290,8 @@ namespace PlayFlowMIDI
             if (PlayOnceRadio.IsChecked == true) _config.Main.PlaybackMode = "PlayOnce";
             else if (RepeatSongRadio.IsChecked == true) _config.Main.PlaybackMode = "RepeatSong";
             else if (RepeatPlaylistRadio.IsChecked == true) _config.Main.PlaybackMode = "RepeatPlaylist";
-            else if (RandomPlaylistRadio.IsChecked == true) _config.Main.PlaybackMode = "RandomPlaylist";
+            
+            _config.Main.Shuffle = ShuffleCheckBox.IsChecked == true;
 
             _config.Settings.ShortcutPlayPause = ShortcutPlayPause.Text;
             _config.Settings.ShortcutStop = ShortcutStop.Text;
@@ -1253,6 +1317,12 @@ namespace PlayFlowMIDI
 
             var autoUpdateCheck = (System.Windows.Controls.CheckBox)this.FindName("AutoUpdateCheck");
             if (autoUpdateCheck != null) _config.Settings.AutoUpdateEnabled = autoUpdateCheck.IsChecked ?? false;
+
+            var notifCheck = (System.Windows.Controls.CheckBox)this.FindName("NotificationsEnabledCheck");
+            if (notifCheck != null) _config.Settings.NotificationsEnabled = notifCheck.IsChecked ?? false;
+            var notifPos = (System.Windows.Controls.ComboBox)this.FindName("NotificationPositionComboBox");
+            if (notifPos?.SelectedItem is System.Windows.Controls.ComboBoxItem posItem && posItem.Tag != null)
+                _config.Settings.NotificationPosition = posItem.Tag.ToString() ?? "BottomRight";
 
             _config.Settings.Speed = SpeedSlider.Value;
             _config.Settings.Pitch = (int)PitchSlider.Value;
@@ -1771,6 +1841,15 @@ namespace PlayFlowMIDI
         {
             UnregisterAllHotKeys();
             SettingsUI.Visibility = Visibility.Visible;
+        }
+
+        private void SupportMe_Click(object sender, RoutedEventArgs e)
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "https://ko-fi.com/lucillebagul",
+                UseShellExecute = true
+            });
         }
 
         private void CloseSettings(object sender, RoutedEventArgs e)
@@ -2521,11 +2600,11 @@ namespace PlayFlowMIDI
                 switch ((HotKeyId)id)
                 {
                     case HotKeyId.PlayPause: TogglePlayPause(false); break;
-                    case HotKeyId.Stop: StopPlayback(); break;
+                    case HotKeyId.Stop: StopPlayback(userInitiated: true); break;
                     case HotKeyId.Prev: PrevButton_Click(this, new RoutedEventArgs()); break;
                     case HotKeyId.Next: NextButton_Click(this, new RoutedEventArgs()); break;
                     case HotKeyId.Preview: TogglePlayPause(true); break;
-                    case HotKeyId.ToggleMode: TogglePlaybackMode(); break;
+                    case HotKeyId.ToggleMode: TogglePlaybackMode(fromHotkey: true); break;
                 }
                 handled = true;
             }
@@ -2552,12 +2631,12 @@ namespace PlayFlowMIDI
 
         private void UpdateTooltips()
         {
-            PrevButton.ToolTip = _config.Settings.ShortcutPrev;
-            PlayPauseButton.ToolTip = _config.Settings.ShortcutPlayPause;
+            PrevButton.ToolTip = $"Previous ({_config.Settings.ShortcutPrev})";
+            PlayPauseButton.ToolTip = $"Play/Pause ({_config.Settings.ShortcutPlayPause})";
             var previewBtn = (System.Windows.Controls.Button)FindName("PreviewButton");
-            if (previewBtn != null) previewBtn.ToolTip = _config.Settings.ShortcutPreview;
-            StopButton.ToolTip = _config.Settings.ShortcutStop;
-            NextButton.ToolTip = _config.Settings.ShortcutNext;
+            if (previewBtn != null) previewBtn.ToolTip = $"Preview ({_config.Settings.ShortcutPreview})";
+            StopButton.ToolTip = $"Stop ({_config.Settings.ShortcutStop})";
+            NextButton.ToolTip = $"Next ({_config.Settings.ShortcutNext})";
         }
 
         private void UnregisterAllHotKeys()
@@ -2651,19 +2730,58 @@ namespace PlayFlowMIDI
             }
         }
 
-        private void TogglePlaybackMode()
+        private void TogglePlaybackMode(bool fromHotkey = false)
         {
             string nextMode = _config.Main.PlaybackMode switch
             {
                 "PlayOnce" => "RepeatSong",
                 "RepeatSong" => "RepeatPlaylist",
-                "RepeatPlaylist" => "RandomPlaylist",
+                "RepeatPlaylist" => "PlayOnce",
                 _ => "PlayOnce"
             };
-            
+
             _config.Main.PlaybackMode = nextMode;
             ApplyConfig();
             SaveConfig();
+
+            if (fromHotkey) ShowModeNotification(nextMode);
+        }
+
+        private bool IsTargetWindowFocused()
+        {
+            if (_targetHwnd == IntPtr.Zero) return false;
+            return GetForegroundWindow() == _targetHwnd;
+        }
+
+        private void ShowSongNotification(MidiSong song)
+        {
+            if (!_config.Settings.NotificationsEnabled) return;
+            if (!IsTargetWindowFocused()) return;
+
+            NotificationWindow.ShowSong(
+                song.Title,
+                song.Duration,
+                _config.Settings.NotificationPosition,
+                _targetHwnd);
+        }
+
+        private void ShowModeNotification(string modeName)
+        {
+            if (!_config.Settings.NotificationsEnabled) return;
+            if (!IsTargetWindowFocused()) return;
+
+            string label = modeName switch
+            {
+                "PlayOnce"       => "Play Once",
+                "RepeatSong"     => "Repeat Song",
+                "RepeatPlaylist" => "Repeat Playlist",
+                _                => modeName
+            };
+
+            NotificationWindow.ShowMode(
+                label,
+                _config.Settings.NotificationPosition,
+                _targetHwnd);
         }
 
         protected override void OnClosed(EventArgs e)

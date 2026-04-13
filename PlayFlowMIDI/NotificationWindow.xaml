@@ -1,0 +1,40 @@
+<Window x:Class="PlayFlowMIDI.NotificationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True"
+        SizeToContent="WidthAndHeight"
+        IsHitTestVisible="False">
+
+    <Border x:Name="RootBorder"
+            Background="#E0121212"
+            CornerRadius="10"
+            Padding="16,12"
+            MinWidth="260"
+            MaxWidth="380"
+            BorderBrush="#333333"
+            BorderThickness="1">
+
+        <StackPanel>
+            <TextBlock x:Name="LineOne"
+                       Foreground="White"
+                       FontSize="13"
+                       FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis"
+                       TextWrapping="NoWrap"/>
+            <TextBlock x:Name="LineTwo"
+                       Foreground="#AAAAAA"
+                       FontSize="11"
+                       Margin="0,3,0,0"
+                       TextTrimming="CharacterEllipsis"
+                       TextWrapping="NoWrap"
+                       Visibility="Collapsed"/>
+        </StackPanel>
+
+    </Border>
+
+</Window>

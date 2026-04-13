@@ -93,7 +93,7 @@
                             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Bottom">
 
                                 <StackPanel Margin="0,0,10,0">
-                                    <TextBlock Text="Search" Foreground="#CCCCCC" FontSize="11"/>
+                                    <TextBlock Text="Search" Foreground="#CCCCCC" FontSize="12"/>
                                     <TextBox x:Name="SearchTextBox" Width="350" Height="26" VerticalContentAlignment="Center" ToolTip="Search songs in the current playlist" TextChanged="SearchTextBox_TextChanged"/>
                                 </StackPanel>
 
@@ -105,7 +105,7 @@
                             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
 
                                 <StackPanel Margin="0,0,10,0">
-                                    <TextBlock Text="Sort By" Foreground="#CCCCCC" FontSize="11"/>
+                                    <TextBlock Text="Sort By" Foreground="#CCCCCC" FontSize="12"/>
                                     <ComboBox x:Name="SortByComboBox" Width="160" Height="26" ToolTip="Choose how the playlist is sorted" SelectionChanged="SortBy_SelectionChanged">
                                         <ComboBoxItem Content="Name" IsSelected="True"/>
                                         <ComboBoxItem Content="Custom Order"/>
@@ -153,6 +153,9 @@
                     <StackPanel Orientation="Horizontal" Margin="8">
                         <Button Content="Settings" Width="90" Height="26" Margin="0,0,10,0" Click="OpenSettings" ToolTip="Open application settings"/>
                         <Button Content="Profiles" Width="90" Click="OpenProfiles" ToolTip="Open game profiles"/>
+                        <Button Width="32" Height="26" Margin="10,0,0,0" Click="SupportMe_Click" ToolTip="Support me">
+                            <TextBlock Text="❤" Foreground="#FF5F5F" FontSize="16" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        </Button>
                     </StackPanel>
                 </GroupBox>
 
@@ -162,7 +165,7 @@
                         <RadioButton x:Name="PlayOnceRadio" Content="Play Once" Foreground="White" IsChecked="True" Checked="SaveTrigger"/>
                         <RadioButton x:Name="RepeatSongRadio" Content="Repeat Song" Foreground="White" Checked="SaveTrigger"/>
                         <RadioButton x:Name="RepeatPlaylistRadio" Content="Repeat Playlist" Foreground="White" Checked="SaveTrigger"/>
-                        <RadioButton x:Name="RandomPlaylistRadio" Content="Random Playlist" Foreground="White" Checked="SaveTrigger"/>
+                        <CheckBox x:Name="ShuffleCheckBox" Content="Shuffle" Foreground="White" Margin="0,8,0,0" Click="SaveTrigger" ToolTip="Play songs in random order"/>
                     </StackPanel>
                 </GroupBox>
 
@@ -224,7 +227,7 @@
                     <StackPanel Margin="8">
                         <ComboBox x:Name="ActiveProfileComboBox" Height="26" Margin="0,0,0,8" SelectionChanged="ActiveProfileComboBox_SelectionChanged"/>
                         
-                        <TextBlock Text="Key Mode" Foreground="#CCCCCC" FontSize="11" Margin="0,0,0,4"/>
+                        <TextBlock Text="Key Mode" Foreground="#CCCCCC" FontSize="12" Margin="0,0,0,4"/>
                         <StackPanel>
                             <RadioButton x:Name="MainMode37" Content="37 Keys" Foreground="White" Checked="MainModeChanged" Visibility="Collapsed"/>
                             <RadioButton x:Name="MainMode36" Content="36 Keys" Foreground="White" Checked="MainModeChanged" Visibility="Collapsed"/>
@@ -384,6 +387,31 @@
                                 Click="RefreshMidiInputDevices_Click"/>
                         </StackPanel>
                     </Grid>
+                </GroupBox>
+
+                <!-- NOTIFICATIONS -->
+                <GroupBox Header="Notifications" Foreground="White" Margin="0,0,0,10">
+                    <StackPanel Margin="10">
+                        <CheckBox x:Name="NotificationsEnabledCheck"
+                                  Content="Enable notifications"
+                                  Foreground="White"
+                                  Margin="0,0,0,8"
+                                  Click="SaveTrigger"
+                                  ToolTip="Show overlay notifications when a song changes or playback mode is toggled via hotkey"/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Position:" Foreground="White" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <ComboBox x:Name="NotificationPositionComboBox"
+                                      Width="140"
+                                      Height="26"
+                                      SelectionChanged="SaveTrigger"
+                                      ToolTip="Corner of the screen where notifications appear">
+                                <ComboBoxItem Content="Top Left"     Tag="TopLeft"/>
+                                <ComboBoxItem Content="Top Right"    Tag="TopRight"/>
+                                <ComboBoxItem Content="Bottom Left"  Tag="BottomLeft"/>
+                                <ComboBoxItem Content="Bottom Right" Tag="BottomRight"/>
+                            </ComboBox>
+                        </StackPanel>
+                    </StackPanel>
                 </GroupBox>
 
                 <!-- APPLICATION -->
