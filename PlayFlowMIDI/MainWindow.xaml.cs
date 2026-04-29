@@ -88,6 +88,12 @@ namespace PlayFlowMIDI
             }
             else { _config.Profiles.First(p => p.Name == "Where Winds Meet").IsDefault = true; }
 
+            if (!_config.Profiles.Any(p => p.Name == "Neverness to Everness"))
+            {
+                _config.Profiles.Add(new ProfileConfig { Name = "Neverness to Everness", ExeName = "HTGame.exe", SwitchToWindow = false, AutoPause = false, SelectedMode = "36", IsDefault = true });
+            }
+            else { _config.Profiles.First(p => p.Name == "Neverness to Everness").IsDefault = true; }
+
             ApplyConfig();
             
             _isLoading = false;
@@ -887,7 +893,7 @@ namespace PlayFlowMIDI
                 IntPtr foregroundHwnd = GetForegroundWindow();
                 IntPtr target = (_targetHwnd != IntPtr.Zero && foregroundHwnd != _targetHwnd) ? _targetHwnd : IntPtr.Zero;
 
-                if (profileName == "Where Winds Meet")
+                if ((profileName == "Where Winds Meet") || (profileName == "Neverness to Everness"))
                 {
                     _inputQueue.Add((keyToPress, target, null));
                     return;
@@ -963,7 +969,7 @@ namespace PlayFlowMIDI
             }
 
             string profileName = _config.LastSelectedProfile;
-            if (profileName == "Where Winds Meet") return;
+            if ((profileName == "Where Winds Meet") || (profileName == "Neverness to Everness")) return;
 
             if (!_config.Settings.HoldNotes) 
             {
@@ -1010,9 +1016,9 @@ namespace PlayFlowMIDI
                 string gridName;
                 int gridIndex;
 
-                if (index < 12) { gridName = "WWMGrid3"; gridIndex = index; }
-                else if (index < 24) { gridName = "WWMGrid2"; gridIndex = index - 12; }
-                else { gridName = "WWMGrid1"; gridIndex = index - 24; }
+                if (index < 12) { gridName = "Keys36Grid3"; gridIndex = index; }
+                else if (index < 24) { gridName = "Keys36Grid2"; gridIndex = index - 12; }
+                else { gridName = "Keys36Grid1"; gridIndex = index - 24; }
 
                 if (profile.KeyMappings.TryGetValue(gridName, out var keys) && gridIndex < keys.Count)
                 {
@@ -1028,9 +1034,9 @@ namespace PlayFlowMIDI
                 string gridName;
                 int gridIndex;
 
-                if (index < 12) { gridName = "Heartopia37Grid3"; gridIndex = index; }
-                else if (index < 24) { gridName = "Heartopia37Grid2"; gridIndex = index - 12; }
-                else { gridName = "Heartopia37Grid1"; gridIndex = index - 24; }
+                if (index < 12) { gridName = "Keys37Grid3"; gridIndex = index; }
+                else if (index < 24) { gridName = "Keys37Grid2"; gridIndex = index - 12; }
+                else { gridName = "Keys37Grid1"; gridIndex = index - 24; }
 
                 if (profile.KeyMappings.TryGetValue(gridName, out var keys) && gridIndex < keys.Count)
                 {
@@ -1046,8 +1052,8 @@ namespace PlayFlowMIDI
                 string gridName;
                 int gridIndex;
 
-                if (index < 7) { gridName = "Heartopia15Grid2"; gridIndex = index; }
-                else { gridName = "Heartopia15Grid1"; gridIndex = index - 7; }
+                if (index < 7) { gridName = "Keys15Grid2"; gridIndex = index; }
+                else { gridName = "Keys15Grid1"; gridIndex = index - 7; }
 
                 if (profile.KeyMappings.TryGetValue(gridName, out var keys) && gridIndex < keys.Count)
                 {
@@ -1350,28 +1356,34 @@ namespace PlayFlowMIDI
                 profile.KeyMappings.Clear();
                 if (profileName == "Heartopia")
                 {
-                    SaveGridKeys(profile, Heartopia37Grid1, "Heartopia37Grid1");
-                    SaveGridKeys(profile, Heartopia37Grid2, "Heartopia37Grid2");
-                    SaveGridKeys(profile, Heartopia37Grid3, "Heartopia37Grid3");
-                    SaveGridKeys(profile, Heartopia15Grid1, "Heartopia15Grid1");
-                    SaveGridKeys(profile, Heartopia15Grid2, "Heartopia15Grid2");
+                    SaveGridKeys(profile, Keys37Grid1, "Keys37Grid1");
+                    SaveGridKeys(profile, Keys37Grid2, "Keys37Grid2");
+                    SaveGridKeys(profile, Keys37Grid3, "Keys37Grid3");
+                    SaveGridKeys(profile, Keys15Grid1, "Keys15Grid1");
+                    SaveGridKeys(profile, Keys15Grid2, "Keys15Grid2");
                 }
                 else if (profileName == "Where Winds Meet")
                 {
-                    SaveGridKeys(profile, WWMGrid1, "WWMGrid1");
-                    SaveGridKeys(profile, WWMGrid2, "WWMGrid2");
-                    SaveGridKeys(profile, WWMGrid3, "WWMGrid3");
+                    SaveGridKeys(profile, Keys36Grid1, "Keys36Grid1");
+                    SaveGridKeys(profile, Keys36Grid2, "Keys36Grid2");
+                    SaveGridKeys(profile, Keys36Grid3, "Keys36Grid3");
+                }
+                else if (profileName == "Neverness to Everness")
+                {
+                    SaveGridKeys(profile, Keys36Grid1, "Keys36Grid1");
+                    SaveGridKeys(profile, Keys36Grid2, "Keys36Grid2");
+                    SaveGridKeys(profile, Keys36Grid3, "Keys36Grid3");
                 }
                 else
                 {
-                    SaveGridKeys(profile, WWMGrid1, "WWMGrid1");
-                    SaveGridKeys(profile, WWMGrid2, "WWMGrid2");
-                    SaveGridKeys(profile, WWMGrid3, "WWMGrid3");
-                    SaveGridKeys(profile, Heartopia37Grid1, "Heartopia37Grid1");
-                    SaveGridKeys(profile, Heartopia37Grid2, "Heartopia37Grid2");
-                    SaveGridKeys(profile, Heartopia37Grid3, "Heartopia37Grid3");
-                    SaveGridKeys(profile, Heartopia15Grid1, "Heartopia15Grid1");
-                    SaveGridKeys(profile, Heartopia15Grid2, "Heartopia15Grid2");
+                    SaveGridKeys(profile, Keys36Grid1, "Keys36Grid1");
+                    SaveGridKeys(profile, Keys36Grid2, "Keys36Grid2");
+                    SaveGridKeys(profile, Keys36Grid3, "Keys36Grid3");
+                    SaveGridKeys(profile, Keys37Grid1, "Keys37Grid1");
+                    SaveGridKeys(profile, Keys37Grid2, "Keys37Grid2");
+                    SaveGridKeys(profile, Keys37Grid3, "Keys37Grid3");
+                    SaveGridKeys(profile, Keys15Grid1, "Keys15Grid1");
+                    SaveGridKeys(profile, Keys15Grid2, "Keys15Grid2");
                 }
             }
 
@@ -1418,13 +1430,13 @@ namespace PlayFlowMIDI
             if (profileName == "Heartopia")
             {
                 // Mode 37
-                SetGridKeys(Heartopia37Grid1, new[] { "Q", "2", "W", "3", "E", "R", "5", "T", "6", "Y", "7", "U", "I" });
-                SetGridKeys(Heartopia37Grid2, new[] { "Z", "S", "X", "D", "C", "V", "G", "B", "H", "N", "J", "M" });
-                SetGridKeys(Heartopia37Grid3, new[] { ",", "L", ".", ";", "/", "O", "0", "P", "-", "[", "=", "]" });
+                SetGridKeys(Keys37Grid1, new[] { "Q", "2", "W", "3", "E", "R", "5", "T", "6", "Y", "7", "U", "I" });
+                SetGridKeys(Keys37Grid2, new[] { "Z", "S", "X", "D", "C", "V", "G", "B", "H", "N", "J", "M" });
+                SetGridKeys(Keys37Grid3, new[] { ",", "L", ".", ";", "/", "O", "0", "P", "-", "[", "=", "]" });
 
                 // Mode 15
-                SetGridKeys(Heartopia15Grid1, new[] { "Q", "W", "E", "R", "T", "Y", "U", "I" });
-                SetGridKeys(Heartopia15Grid2, new[] { "A", "S", "D", "F", "G", "H", "J" });
+                SetGridKeys(Keys15Grid1, new[] { "Q", "W", "E", "R", "T", "Y", "U", "I" });
+                SetGridKeys(Keys15Grid2, new[] { "A", "S", "D", "F", "G", "H", "J" });
 
                 ExeNameBox.Text = "xdt.exe";
                 SwitchToWindowCheck.IsChecked = true;
@@ -1433,25 +1445,36 @@ namespace PlayFlowMIDI
             }
             else if (profileName == "Where Winds Meet")
             {
-                SetGridKeys(WWMGrid1, new[] { "Q", "Shift+Q", "W", "Ctrl+E", "E", "R", "Shift+R", "T", "Shift+T", "Y", "Ctrl+U", "U" });
-                SetGridKeys(WWMGrid2, new[] { "A", "Shift+A", "S", "Ctrl+D", "D", "F", "Shift+F", "G", "Shift+G", "H", "Ctrl+J", "J" });
-                SetGridKeys(WWMGrid3, new[] { "Z", "Shift+Z", "X", "Ctrl+C", "C", "V", "Shift+V", "B", "Shift+B", "N", "Ctrl+M", "M" });
+                SetGridKeys(Keys36Grid1, new[] { "Q", "Shift+Q", "W", "Ctrl+E", "E", "R", "Shift+R", "T", "Shift+T", "Y", "Ctrl+U", "U" });
+                SetGridKeys(Keys36Grid2, new[] { "A", "Shift+A", "S", "Ctrl+D", "D", "F", "Shift+F", "G", "Shift+G", "H", "Ctrl+J", "J" });
+                SetGridKeys(Keys36Grid3, new[] { "Z", "Shift+Z", "X", "Ctrl+C", "C", "V", "Shift+V", "B", "Shift+B", "N", "Ctrl+M", "M" });
 
                 ExeNameBox.Text = "wwm.exe";
                 SwitchToWindowCheck.IsChecked = false;
                 AutoPauseCheck.IsChecked = false;
                 Mode36.IsChecked = true;
             }
+            else if (profileName == "Neverness to Everness")
+            {
+                SetGridKeys(Keys36Grid1, new[] { "Q", "Shift+Q", "W", "Ctrl+E", "E", "R", "Shift+R", "T", "Shift+T", "Y", "Ctrl+U", "U" });
+                SetGridKeys(Keys36Grid2, new[] { "A", "Shift+A", "S", "Ctrl+D", "D", "F", "Shift+F", "G", "Shift+G", "H", "Ctrl+J", "J" });
+                SetGridKeys(Keys36Grid3, new[] { "Z", "Shift+Z", "X", "Ctrl+C", "C", "V", "Shift+V", "B", "Shift+B", "N", "Ctrl+M", "M" });
+
+                ExeNameBox.Text = "HTGame.exe";
+                SwitchToWindowCheck.IsChecked = true;
+                AutoPauseCheck.IsChecked = true;
+                Mode36.IsChecked = true;
+            }
             else
             {
-                SetGridKeys(Heartopia37Grid1, Array.Empty<string>());
-                SetGridKeys(Heartopia37Grid2, Array.Empty<string>());
-                SetGridKeys(Heartopia37Grid3, Array.Empty<string>());
-                SetGridKeys(Heartopia15Grid1, Array.Empty<string>());
-                SetGridKeys(Heartopia15Grid2, Array.Empty<string>());
-                SetGridKeys(WWMGrid1, Array.Empty<string>());
-                SetGridKeys(WWMGrid2, Array.Empty<string>());
-                SetGridKeys(WWMGrid3, Array.Empty<string>());
+                SetGridKeys(Keys37Grid1, Array.Empty<string>());
+                SetGridKeys(Keys37Grid2, Array.Empty<string>());
+                SetGridKeys(Keys37Grid3, Array.Empty<string>());
+                SetGridKeys(Keys15Grid1, Array.Empty<string>());
+                SetGridKeys(Keys15Grid2, Array.Empty<string>());
+                SetGridKeys(Keys36Grid1, Array.Empty<string>());
+                SetGridKeys(Keys36Grid2, Array.Empty<string>());
+                SetGridKeys(Keys36Grid3, Array.Empty<string>());
                 ExeNameBox.Text = "";
                 SwitchToWindowCheck.IsChecked = false;
                 AutoPauseCheck.IsChecked = false;
@@ -2223,6 +2246,12 @@ namespace PlayFlowMIDI
                         Mode15.Visibility = Visibility.Collapsed;
                         Mode36.Visibility = Visibility.Visible;
                     }
+                    else if (profileName == "Neverness to Everness")
+                    {
+                        Mode37.Visibility = Visibility.Collapsed;
+                        Mode15.Visibility = Visibility.Collapsed;
+                        Mode36.Visibility = Visibility.Visible;
+                    }
                 }
 
                 ExeNameBox.Text = profile.ExeName;
@@ -2245,28 +2274,34 @@ namespace PlayFlowMIDI
 
                 if (profileName == "Heartopia")
                 {
-                    LoadGridKeys(profile, Heartopia37Grid1, "Heartopia37Grid1");
-                    LoadGridKeys(profile, Heartopia37Grid2, "Heartopia37Grid2");
-                    LoadGridKeys(profile, Heartopia37Grid3, "Heartopia37Grid3");
-                    LoadGridKeys(profile, Heartopia15Grid1, "Heartopia15Grid1");
-                    LoadGridKeys(profile, Heartopia15Grid2, "Heartopia15Grid2");
+                    LoadGridKeys(profile, Keys37Grid1, "Keys37Grid1");
+                    LoadGridKeys(profile, Keys37Grid2, "Keys37Grid2");
+                    LoadGridKeys(profile, Keys37Grid3, "Keys37Grid3");
+                    LoadGridKeys(profile, Keys15Grid1, "Keys15Grid1");
+                    LoadGridKeys(profile, Keys15Grid2, "Keys15Grid2");
                 }
                 else if (profileName == "Where Winds Meet")
                 {
-                    LoadGridKeys(profile, WWMGrid1, "WWMGrid1");
-                    LoadGridKeys(profile, WWMGrid2, "WWMGrid2");
-                    LoadGridKeys(profile, WWMGrid3, "WWMGrid3");
+                    LoadGridKeys(profile, Keys36Grid1, "Keys36Grid1");
+                    LoadGridKeys(profile, Keys36Grid2, "Keys36Grid2");
+                    LoadGridKeys(profile, Keys36Grid3, "Keys36Grid3");
+                }
+                else if (profileName == "Neverness to Everness")
+                {
+                    LoadGridKeys(profile, Keys36Grid1, "Keys36Grid1");
+                    LoadGridKeys(profile, Keys36Grid2, "Keys36Grid2");
+                    LoadGridKeys(profile, Keys36Grid3, "Keys36Grid3");
                 }
                 else
                 {
-                    LoadGridKeys(profile, WWMGrid1, "WWMGrid1");
-                    LoadGridKeys(profile, WWMGrid2, "WWMGrid2");
-                    LoadGridKeys(profile, WWMGrid3, "WWMGrid3");
-                    LoadGridKeys(profile, Heartopia37Grid1, "Heartopia37Grid1");
-                    LoadGridKeys(profile, Heartopia37Grid2, "Heartopia37Grid2");
-                    LoadGridKeys(profile, Heartopia37Grid3, "Heartopia37Grid3");
-                    LoadGridKeys(profile, Heartopia15Grid1, "Heartopia15Grid1");
-                    LoadGridKeys(profile, Heartopia15Grid2, "Heartopia15Grid2");
+                    LoadGridKeys(profile, Keys36Grid1, "Keys36Grid1");
+                    LoadGridKeys(profile, Keys36Grid2, "Keys36Grid2");
+                    LoadGridKeys(profile, Keys36Grid3, "Keys36Grid3");
+                    LoadGridKeys(profile, Keys37Grid1, "Keys37Grid1");
+                    LoadGridKeys(profile, Keys37Grid2, "Keys37Grid2");
+                    LoadGridKeys(profile, Keys37Grid3, "Keys37Grid3");
+                    LoadGridKeys(profile, Keys15Grid1, "Keys15Grid1");
+                    LoadGridKeys(profile, Keys15Grid2, "Keys15Grid2");
                 }
             }
 
@@ -2291,13 +2326,13 @@ namespace PlayFlowMIDI
 
         private void UpdateModeVisibility()
         {
-            HeartopiaKeys37.Visibility = Visibility.Collapsed;
-            HeartopiaKeys15.Visibility = Visibility.Collapsed;
-            WWMKeys36.Visibility = Visibility.Collapsed;
+            Keys37.Visibility = Visibility.Collapsed;
+            Keys15.Visibility = Visibility.Collapsed;
+            Keys36.Visibility = Visibility.Collapsed;
 
-            if (Mode37.IsChecked == true) HeartopiaKeys37.Visibility = Visibility.Visible;
-            if (Mode15.IsChecked == true) HeartopiaKeys15.Visibility = Visibility.Visible;
-            if (Mode36.IsChecked == true) WWMKeys36.Visibility = Visibility.Visible;
+            if (Mode37.IsChecked == true) Keys37.Visibility = Visibility.Visible;
+            if (Mode15.IsChecked == true) Keys15.Visibility = Visibility.Visible;
+            if (Mode36.IsChecked == true) Keys36.Visibility = Visibility.Visible;
         }
 
         private void MainModeChanged(object sender, RoutedEventArgs e)
@@ -2330,6 +2365,12 @@ namespace PlayFlowMIDI
                 MainMode15.Visibility = Visibility.Visible;
             }
             else if (profileName == "Where Winds Meet")
+            {
+                MainMode37.Visibility = Visibility.Collapsed;
+                MainMode36.Visibility = Visibility.Visible;
+                MainMode15.Visibility = Visibility.Collapsed;
+            }
+            else if (profileName == "Neverness to Everness")
             {
                 MainMode37.Visibility = Visibility.Collapsed;
                 MainMode36.Visibility = Visibility.Visible;

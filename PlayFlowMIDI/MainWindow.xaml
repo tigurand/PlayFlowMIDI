@@ -617,11 +617,11 @@
                 </StackPanel>
 
 
-                        <!-- ================= WWM 36 KEYS (BASE LAYOUT) ================= -->
+                        <!-- ================= 36 KEYS (BASE LAYOUT) ================= -->
 
-                        <StackPanel x:Name="WWMKeys36" Visibility="Collapsed" TextBox.PreviewKeyDown="Shortcut_KeyDown">
+                        <StackPanel x:Name="Keys36" Visibility="Collapsed" TextBox.PreviewKeyDown="Shortcut_KeyDown">
 
-                            <UniformGrid x:Name="WWMGrid1" Columns="12" Width="744" HorizontalAlignment="Left">
+                            <UniformGrid x:Name="Keys36Grid1" Columns="12" Width="744" HorizontalAlignment="Left">
 
                                 <TextBox Width="56" Height="28" Margin="3" Text="Q" TextChanged="SaveTrigger"/>
                                 <TextBox Width="56" Height="28" Margin="3" Text="Shift+Q" TextChanged="SaveTrigger"/>
@@ -639,7 +639,7 @@
                             </UniformGrid>
 
 
-                            <UniformGrid x:Name="WWMGrid2" Columns="12" Width="744" HorizontalAlignment="Left">
+                            <UniformGrid x:Name="Keys36Grid2" Columns="12" Width="744" HorizontalAlignment="Left">
 
                                 <TextBox Width="56" Height="28" Margin="3" Text="A" TextChanged="SaveTrigger"/>
                                 <TextBox Width="56" Height="28" Margin="3" Text="Shift+A" TextChanged="SaveTrigger"/>
@@ -657,7 +657,7 @@
                             </UniformGrid>
 
 
-                            <UniformGrid x:Name="WWMGrid3" Columns="12" Width="744" HorizontalAlignment="Left">
+                            <UniformGrid x:Name="Keys36Grid3" Columns="12" Width="744" HorizontalAlignment="Left">
 
                                 <TextBox Width="56" Height="28" Margin="3" Text="Z" TextChanged="SaveTrigger"/>
                                 <TextBox Width="56" Height="28" Margin="3" Text="Shift+Z" TextChanged="SaveTrigger"/>
@@ -678,11 +678,11 @@
 
 
 
-                        <!-- ================= HEARTOPIA 37 KEYS ================= -->
+                        <!-- ================= 37 KEYS ================= -->
 
-                        <StackPanel x:Name="HeartopiaKeys37" Visibility="Collapsed" TextBox.PreviewKeyDown="Shortcut_KeyDown">
+                        <StackPanel x:Name="Keys37" Visibility="Collapsed" TextBox.PreviewKeyDown="Shortcut_KeyDown">
 
-                            <UniformGrid x:Name="Heartopia37Grid1" Columns="13">
+                            <UniformGrid x:Name="Keys37Grid1" Columns="13">
                                 <TextBox Width="56" Height="28" Margin="3" Text="Q" TextChanged="SaveTrigger"/>
                                 <TextBox Width="56" Height="28" Margin="3" Text="2" TextChanged="SaveTrigger"/>
                                 <TextBox Width="56" Height="28" Margin="3" Text="W" TextChanged="SaveTrigger"/>
@@ -698,7 +698,7 @@
                                 <TextBox Width="56" Height="28" Margin="3" Text="I" TextChanged="SaveTrigger"/>
                             </UniformGrid>
 
-                            <UniformGrid x:Name="Heartopia37Grid2" Columns="13">
+                            <UniformGrid x:Name="Keys37Grid2" Columns="13">
                                 <TextBox Width="56" Height="28" Margin="3" Text="Z" TextChanged="SaveTrigger"/>
                                 <TextBox Width="56" Height="28" Margin="3" Text="S" TextChanged="SaveTrigger"/>
                                 <TextBox Width="56" Height="28" Margin="3" Text="X" TextChanged="SaveTrigger"/>
@@ -714,7 +714,7 @@
                                 <TextBox Visibility="Hidden"/>
                             </UniformGrid>
 
-                            <UniformGrid x:Name="Heartopia37Grid3" Columns="13">
+                            <UniformGrid x:Name="Keys37Grid3" Columns="13">
                                 <TextBox Width="56" Height="28" Margin="3" Text="," TextChanged="SaveTrigger"/>
                                 <TextBox Width="56" Height="28" Margin="3" Text="L" TextChanged="SaveTrigger"/>
                                 <TextBox Width="56" Height="28" Margin="3" Text="." TextChanged="SaveTrigger"/>
@@ -734,11 +734,11 @@
 
 
 
-                        <!-- ================= HEARTOPIA 15 KEYS ================= -->
+                        <!-- ================= 15 KEYS ================= -->
 
-                        <StackPanel x:Name="HeartopiaKeys15" Visibility="Collapsed" TextBox.PreviewKeyDown="Shortcut_KeyDown">
+                        <StackPanel x:Name="Keys15" Visibility="Collapsed" TextBox.PreviewKeyDown="Shortcut_KeyDown">
 
-                            <UniformGrid x:Name="Heartopia15Grid1" Columns="8"
+                            <UniformGrid x:Name="Keys15Grid1" Columns="8"
                                          Width="496"
                                          HorizontalAlignment="Left">
                                 <TextBox Width="56" Height="28" Margin="3" Text="Q" TextChanged="SaveTrigger"/>
@@ -751,7 +751,7 @@
                                 <TextBox Width="56" Height="28" Margin="3" Text="I" TextChanged="SaveTrigger"/>
                             </UniformGrid>
 
-                            <UniformGrid x:Name="Heartopia15Grid2" Columns="7"
+                            <UniformGrid x:Name="Keys15Grid2" Columns="7"
                                          Width="434"
                                          HorizontalAlignment="Left"
                                          Margin="0">
