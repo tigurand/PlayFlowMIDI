@@ -12,6 +12,7 @@
 - 🎮 **Pre-configured Profiles**:
   - **Heartopia**
   - **Where Winds Meet**
+  - **Neverness to Everness**
 - 🛠️ **Custom Game Support**: Easily add your own profiles for other games by defining key mappings and executable targets.
 - ⏱️ **High Precision**: Powered by [DryWetMidi](https://github.com/melanchall/drywetmidi) for low-latency and accurate note timing.
 - 🚀 **Advanced Playback Controls**:
