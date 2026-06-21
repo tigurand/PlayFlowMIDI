@@ -426,6 +426,7 @@ namespace PlayFlowMIDI
                 {
                     var allNotes = trackChunks.SelectMany(t => t.GetNotes()).ToList();
                     int root = DetectMajorKey(allNotes);
+                    int? firstNoteNumber = allNotes.Where(n => n.Channel != 9).OrderBy(n => n.Time).FirstOrDefault()?.NoteNumber;
                     foreach (var trackChunk in trackChunks)
                     {
                         using (var notesManager = trackChunk.ManageNotes())
@@ -438,6 +439,29 @@ namespace PlayFlowMIDI
                                 }
                             }
                         }
+                    }
+                    if (firstNoteNumber.HasValue)
+                    {
+                        int mapped = FoldTo15KeyScale(firstNoteNumber.Value, root);
+                        int fullDiff = mapped - firstNoteNumber.Value;
+                        int pitchDiff = (mapped % 12) - (firstNoteNumber.Value % 12);
+                        if (pitchDiff > 6) pitchDiff -= 12;
+                        if (pitchDiff < -6) pitchDiff += 12;
+
+                        string transposeLabel;
+                        if (fullDiff == 0)
+                        {
+                            transposeLabel = "15 Keys";
+                        }
+                        else if (fullDiff == pitchDiff)
+                        {
+                            transposeLabel = $"15 Keys (shifted {(fullDiff >= 0 ? "+" : "")}{fullDiff})";
+                        }
+                        else
+                        {
+                            transposeLabel = $"15 Keys (shifted {(fullDiff >= 0 ? "+" : "")}{fullDiff}, or {(pitchDiff >= 0 ? "+" : "")}{pitchDiff} nearby)";
+                        }
+                        MainMode15.Content = transposeLabel;
                     }
                 }
 
@@ -1870,7 +1894,7 @@ namespace PlayFlowMIDI
         {
             Process.Start(new ProcessStartInfo
             {
-                FileName = "https://sociabuzz.com/lucillebagul",
+                FileName = "https://linktr.ee/LucilleBagul",
                 UseShellExecute = true
             });
         }
