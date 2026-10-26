@@ -2126,11 +2126,9 @@ namespace PlayFlowMIDI
             }
 
             ProfileList.Items.Clear();
-            ActiveProfileComboBox.Items.Clear();
             foreach (var p in _config.Profiles)
             {
                 ProfileList.Items.Add(new ListBoxItem { Content = p.Name });
-                ActiveProfileComboBox.Items.Add(new ComboBoxItem { Content = p.Name });
             }
 
             foreach (var item in ProfileList.Items)
@@ -2141,17 +2139,9 @@ namespace PlayFlowMIDI
                     break;
                 }
             }
-
-            foreach (var item in ActiveProfileComboBox.Items)
-            {
-                if (item is ComboBoxItem cbi && cbi.Content.ToString() == _config.LastSelectedProfile)
-                {
-                    ActiveProfileComboBox.SelectedItem = item;
-                    break;
-                }
-            }
             if (ProfileList.SelectedIndex == -1 && ProfileList.Items.Count > 0) ProfileList.SelectedIndex = 0;
-            if (ActiveProfileComboBox.SelectedIndex == -1 && ActiveProfileComboBox.Items.Count > 0) ActiveProfileComboBox.SelectedIndex = 0;
+
+            SyncActiveProfileComboBox();
 
             var profile = _config.Profiles.FirstOrDefault(p => p.Name == _config.LastSelectedProfile);
             if (profile != null)
@@ -3032,6 +3022,44 @@ namespace PlayFlowMIDI
             ReloadSongs();
         }
 
+        /// <summary>
+        /// Rebuilds the main-menu Active Profile selector from the configured profiles so that
+        /// profiles added, renamed, or deleted in the Profiles menu show up without an app restart.
+        /// Selection events are suppressed while rebuilding so the profile load flow is not re-entered.
+        /// </summary>
+        private void SyncActiveProfileComboBox(string? preferredSelection = null)
+        {
+            string targetName = preferredSelection ?? _config.LastSelectedProfile;
+            if (string.IsNullOrEmpty(targetName))
+                targetName = _config.Profiles.FirstOrDefault()?.Name ?? string.Empty;
+
+            bool wasLoading = _isLoading;
+            _isLoading = true;
+            try
+            {
+                ActiveProfileComboBox.Items.Clear();
+                foreach (var p in _config.Profiles)
+                {
+                    ActiveProfileComboBox.Items.Add(new ComboBoxItem { Content = p.Name });
+                }
+
+                foreach (var item in ActiveProfileComboBox.Items)
+                {
+                    if (item is ComboBoxItem cbi && cbi.Content.ToString() == targetName)
+                    {
+                        ActiveProfileComboBox.SelectedItem = item;
+                        break;
+                    }
+                }
+                if (ActiveProfileComboBox.SelectedIndex == -1 && ActiveProfileComboBox.Items.Count > 0)
+                    ActiveProfileComboBox.SelectedIndex = 0;
+            }
+            finally
+            {
+                _isLoading = wasLoading;
+            }
+        }
+
         private void AddProfile_Click(object sender, RoutedEventArgs e)
         {
             string newName = "New Profile";
@@ -3057,6 +3085,8 @@ namespace PlayFlowMIDI
             ProfileList.Items.Add(lbi);
             ProfileList.SelectedItem = lbi;
 
+            SyncActiveProfileComboBox(newName);
+
             SaveConfig();
         }
 
@@ -3074,6 +3104,9 @@ namespace PlayFlowMIDI
                     _config.Profiles.Remove(profile);
                     ProfileList.Items.Remove(selectedItem);
                     ProfileList.SelectedIndex = 0;
+
+                    SyncActiveProfileComboBox();
+
                     SaveConfig();
                 }
             }
@@ -3096,17 +3129,11 @@ namespace PlayFlowMIDI
                 profile.Name = newName;
                 selectedItem.Content = newName;
                 
-                foreach (var item in ActiveProfileComboBox.Items)
-                {
-                    if (item is ComboBoxItem cbi && cbi.Content.ToString() == oldName)
-                    {
-                        cbi.Content = newName;
-                        break;
-                    }
-                }
-
                 _config.LastSelectedProfile = newName;
-                _config.Save(); 
+
+                SyncActiveProfileComboBox(newName);
+
+                _config.Save();
             }
         }
 
