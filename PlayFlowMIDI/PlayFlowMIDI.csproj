@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
-    <Version>1.1.1.0</Version>
+    <Version>1.2.0.0</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -13,6 +13,9 @@
 
   <ItemGroup>
     <None Remove="PlayFlowMIDI.ico" />
+    <Content Include="THIRD-PARTY-NOTICES.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
@@ -23,7 +26,20 @@
     <Resource Include="PlayFlowMIDI.ico" />
   </ItemGroup>
 
-  <Target Name="ZipRelease" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+  <Target Name="BuildBackgroundInjection" BeforeTargets="Build">
+    <MSBuild Projects="..\PlayFlowMIDI.Injector\PlayFlowMIDI.Injector.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
+    <MSBuild Projects="..\PlayFlowMIDI.BackgroundHook\PlayFlowMIDI.BackgroundHook.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
+  </Target>
+
+  <Target Name="CopyBackgroundInjection" AfterTargets="Build">
+    <ItemGroup>
+      <InjectionFiles Include="..\PlayFlowMIDI.Injector\bin\$(Configuration)\net48\**\*.*" />
+      <InjectionFiles Include="..\PlayFlowMIDI.BackgroundHook\bin\$(Configuration)\net48\PlayFlowMIDI.BackgroundHook.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(InjectionFiles)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="ZipRelease" AfterTargets="CopyBackgroundInjection" Condition="'$(Configuration)' == 'Release'">
     <ZipDirectory
       SourceDirectory="$(OutputPath)"
       DestinationFile="$(OutputPath)..\PlayFlowMIDI-v$(Version).zip"

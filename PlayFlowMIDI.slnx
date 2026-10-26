@@ -1,3 +1,5 @@
 <Solution>
   <Project Path="PlayFlowMIDI/PlayFlowMIDI.csproj" />
+  <Project Path="PlayFlowMIDI.Injector/PlayFlowMIDI.Injector.csproj" />
+  <Project Path="PlayFlowMIDI.BackgroundHook/PlayFlowMIDI.BackgroundHook.csproj" />
 </Solution>

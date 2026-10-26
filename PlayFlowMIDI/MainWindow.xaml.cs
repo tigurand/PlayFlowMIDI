@@ -43,6 +43,7 @@ namespace PlayFlowMIDI
         private List<MidiSong>? _draggedSongs;
         private List<MidiSong> _masterPlaylist = new();
         private Playback? _playback;
+        private readonly RawInputInjector _rawInjector = new();
         private MidiFile? _currentMidiFile;
         private IOutputDevice? _outputDevice;
         private IInputDevice? _midiInputDevice;
@@ -53,6 +54,7 @@ namespace PlayFlowMIDI
         private bool _isUserDraggingSlider = false;
         private bool _isProgrammaticSliderUpdate = false;
         private bool _isAutoPaused = false;
+        private bool _injectionWarningShown = false;
         private DispatcherTimer? _uiTimer;
         private MidiSong? _currentPlayingSong;
         private List<int> _shuffleIndices = new();
@@ -67,37 +69,47 @@ namespace PlayFlowMIDI
 
         public MainWindow()
         {
+            InputDebugLog("ctor: begin");
             InitializeComponent();
+            InputDebugLog("ctor: InitializeComponent done");
 
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
             this.Title = $"PlayFlowMIDI - {version}";
 
             _config = AppConfig.Load();
-            
+            InputDebugLog("ctor: config loaded");
+
             StartInputProcessor();
+            InputDebugLog("ctor: input processor started");
 
             if (!_config.Profiles.Any(p => p.Name == "Heartopia"))
             {
-                _config.Profiles.Add(new ProfileConfig { Name = "Heartopia", ExeName = "xdt.exe", SwitchToWindow = true, AutoPause = true, SelectedMode = "37", IsDefault = true });
+                _config.Profiles.Add(new ProfileConfig { Name = "Heartopia", ExeName = "xdt.exe", SwitchToWindow = false, AutoPause = false, InputMode = "Injection", SelectedMode = "37", IsDefault = true });
             }
             else { _config.Profiles.First(p => p.Name == "Heartopia").IsDefault = true; }
 
             if (!_config.Profiles.Any(p => p.Name == "Where Winds Meet"))
             {
-                _config.Profiles.Add(new ProfileConfig { Name = "Where Winds Meet", ExeName = "wwm.exe", SwitchToWindow = false, AutoPause = false, SelectedMode = "36", IsDefault = true });
+                _config.Profiles.Add(new ProfileConfig { Name = "Where Winds Meet", ExeName = "wwm.exe", SwitchToWindow = false, AutoPause = false, InputMode = "FocusFree", SelectedMode = "36", IsDefault = true });
             }
             else { _config.Profiles.First(p => p.Name == "Where Winds Meet").IsDefault = true; }
 
             if (!_config.Profiles.Any(p => p.Name == "Neverness to Everness"))
             {
-                _config.Profiles.Add(new ProfileConfig { Name = "Neverness to Everness", ExeName = "HTGame.exe", SwitchToWindow = false, AutoPause = false, SelectedMode = "36", IsDefault = true });
+                _config.Profiles.Add(new ProfileConfig { Name = "Neverness to Everness", ExeName = "HTGame.exe", SwitchToWindow = false, AutoPause = false, InputMode = "FocusFree", SelectedMode = "36", IsDefault = true });
             }
             else { _config.Profiles.First(p => p.Name == "Neverness to Everness").IsDefault = true; }
 
+            MigrateInputModeConfig();
+
+            InputDebugLog("ctor: before ApplyConfig");
             ApplyConfig();
-            
+            InputDebugLog("ctor: after ApplyConfig");
+
             _isLoading = false;
+            InputDebugLog("ctor: before SaveConfig");
             SaveConfig();
+            InputDebugLog("ctor: after SaveConfig");
             _isLoading = true;
 
             _uiTimer = new DispatcherTimer();
@@ -110,7 +122,9 @@ namespace PlayFlowMIDI
 
             string lastPath = _config.Main.LastPlayedSongPath;
 
+            InputDebugLog("ctor: before ReloadSongs");
             ReloadSongs();
+            InputDebugLog("ctor: after ReloadSongs");
 
             if (!string.IsNullOrEmpty(lastPath))
             {
@@ -119,7 +133,9 @@ namespace PlayFlowMIDI
                 {
                     PlaylistListView.SelectedItem = lastSong;
                     PlaylistListView.ScrollIntoView(lastSong);
+                    InputDebugLog("ctor: before StartPlayback(load)");
                     _ = StartPlayback(lastSong, false);
+                    InputDebugLog("ctor: after StartPlayback(load)");
                 }
             }
 
@@ -133,10 +149,13 @@ namespace PlayFlowMIDI
                 }
             }
             catch { }
+            InputDebugLog("ctor: output device ready");
 
+            InputDebugLog("ctor: before RefreshMidiInputDevices");
             RefreshMidiInputDevices();
+            InputDebugLog("ctor: done");
 
-            this.Closed += (s, e) => 
+            this.Closed += (s, e) =>
             {
                 SaveConfig();
                 _outputDevice?.Dispose();
@@ -146,15 +165,21 @@ namespace PlayFlowMIDI
 
         private void UiTimer_Tick(object? sender, EventArgs e)
         {
+            if (_playback != null && !_isPreviewMode)
+            {
+                RefreshTargetWindowIfNeeded();
+                KeepTargetWindowActive();
+            }
+
             if (_playback != null && !_isUserDraggingSlider)
             {
                 // Auto Pause Logic
                 string profileName = _config.LastSelectedProfile;
                 var profile = _config.Profiles.FirstOrDefault(p => p.Name == profileName);
-                if (!_isPreviewMode && profile != null && profile.AutoPause && _targetHwnd != IntPtr.Zero)
+                if (!_isPreviewMode && profile != null && profile.AutoPause && _targetTopHwnd != IntPtr.Zero)
                 {
                     IntPtr foregroundHwnd = GetForegroundWindow();
-                    bool isForeground = (foregroundHwnd == _targetHwnd);
+                    bool isForeground = (foregroundHwnd == _targetTopHwnd);
 
                     if (!isForeground && _playback.IsRunning && !_isAutoPaused)
                     {
@@ -239,7 +264,14 @@ namespace PlayFlowMIDI
                 }
                 else
                 {
-                    if (!_isPreviewMode) await SwitchToGameWindowAsync();
+                    if (!_isPreviewMode)
+                    {
+                        await SwitchToGameWindowAsync();
+                        if (IsInjectionMode)
+                            await EnsureBackgroundInjectionAsync();
+                        else
+                            ActivateTargetIfBackground();
+                    }
                     _playback.Start();
                     _isPlaying = true;
                     if (_isPreviewMode)
@@ -257,6 +289,8 @@ namespace PlayFlowMIDI
 
         private Dictionary<int, int> _pitchActiveCount = new();
         private Dictionary<int, string> _pitchToKey = new();
+        private Dictionary<int, IntPtr> _pitchTarget = new();
+        private Dictionary<int, InputDeliveryMode> _pitchMode = new();
         private Dictionary<int, System.Threading.CancellationTokenSource> _noteReleaseTokens = new();
         private Dictionary<int, long> _lastNoteOnTime = new();
 
@@ -264,15 +298,280 @@ namespace PlayFlowMIDI
         private static extern IntPtr GetForegroundWindow();
 
         [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
         private static extern bool EnumThreadWindows(int dwThreadId, EnumThreadDelegate lpfn, IntPtr lParam);
 
         private delegate bool EnumThreadDelegate(IntPtr hWnd, IntPtr lParam);
 
         [DllImport("user32.dll")]
-        private static extern bool IsWindowVisible(IntPtr hWnd);
+        private static extern bool EnumWindows(EnumWindowsDelegate lpfn, IntPtr lParam);
+
+        private delegate bool EnumWindowsDelegate(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll")]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
+
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_TOOLWINDOW = 0x00000080;
+
+        private static readonly string[] KnownGameWindowClasses = { "UnrealWindow", "UnityWndClass" };
 
         private IntPtr _targetHwnd = IntPtr.Zero;
-        private System.Collections.Concurrent.BlockingCollection<(string Key, IntPtr Target, bool? IsDown)> _inputQueue = new();
+        private IntPtr _targetTopHwnd = IntPtr.Zero;
+        private IntPtr _lastForegroundHwnd = IntPtr.Zero;
+        private long _lastTargetRefreshTick;
+        private long _lastTargetActivationTick;
+        private readonly record struct QueuedInput(string Key, IntPtr Target, bool? IsDown, InputDeliveryMode Mode, long Enqueued);
+        private System.Collections.Concurrent.BlockingCollection<QueuedInput> _inputQueue = new();
+
+        private static readonly string InputDebugLogPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "PlayFlowMIDI", "input-debug.log");
+        private static readonly bool InputDebugEnabled =
+            string.Equals(Environment.GetEnvironmentVariable("PLAYFLOWMIDI_DEBUG"), "1", StringComparison.Ordinal);
+
+        private static void InputDebugLog(string message)
+        {
+            if (!InputDebugEnabled) return;
+            try
+            {
+                File.AppendAllText(InputDebugLogPath, $"{DateTime.Now:HH:mm:ss.fff} {message}{Environment.NewLine}");
+            }
+            catch { }
+        }
+
+        private static string NormalizeInputMode(string? mode)
+        {
+            // "WindowMessages" was the old persisted name for Focus-Free. Keep it as an
+            // alias so existing configs keep working.
+            if (string.Equals(mode, "FocusFree", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(mode, "Focus-Free", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(mode, "Focus Free", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(mode, "WindowMessages", StringComparison.OrdinalIgnoreCase))
+                return "FocusFree";
+            if (string.Equals(mode, "Injection", StringComparison.OrdinalIgnoreCase))
+                return "Injection";
+            if (string.Equals(mode, "Legacy", StringComparison.OrdinalIgnoreCase))
+                return "Legacy";
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// One-time migration for configs created before per-profile input modes existed.
+        /// New profiles get their defaults when they are created, and Reset to Default
+        /// restores them in ResetToDefault_Click. This only needs the original built-ins.
+        /// Also converts the old "WindowMessages" spelling to the current "FocusFree" name.
+        /// </summary>
+        private void MigrateInputModeConfig()
+        {
+            if (_config.ConfigVersion < 1)
+            {
+                foreach (var profile in _config.Profiles)
+                {
+                    if (!string.IsNullOrEmpty(profile.InputMode)) continue;
+
+                    if (profile.Name == "Heartopia")
+                        profile.InputMode = "Injection";
+                    else if (profile.Name == "Where Winds Meet" || profile.Name == "Neverness to Everness")
+                        profile.InputMode = "FocusFree";
+                }
+
+                _config.ConfigVersion = 1;
+            }
+
+            foreach (var profile in _config.Profiles)
+            {
+                string normalized = NormalizeInputMode(profile.InputMode);
+                if (!string.IsNullOrEmpty(normalized))
+                    profile.InputMode = normalized;
+            }
+        }
+
+        private string ActiveProfileInputMode
+        {
+            get
+            {
+                var profile = _config.Profiles.FirstOrDefault(p => p.Name == _config.LastSelectedProfile);
+                return NormalizeInputMode(profile?.InputMode);
+            }
+        }
+
+        private string EffectiveInputMode
+        {
+            get
+            {
+                string profileMode = ActiveProfileInputMode;
+                if (!string.IsNullOrEmpty(profileMode)) return profileMode;
+
+                string globalMode = NormalizeInputMode(_config.Settings.InputMode);
+                return string.IsNullOrEmpty(globalMode) ? "FocusFree" : globalMode;
+            }
+        }
+
+        private bool IsWindowMessagesMode => EffectiveInputMode == "FocusFree";
+
+        private bool IsInjectionMode => EffectiveInputMode == "Injection";
+
+        private bool IsLegacyMode => EffectiveInputMode == "Legacy";
+
+        private bool IsTargetForeground =>
+            _targetTopHwnd != IntPtr.Zero && GetForegroundWindow() == _targetTopHwnd;
+
+        private InputDeliveryMode CurrentInputMode =>
+            IsInjectionMode
+                ? (IsTargetForeground ? InputDeliveryMode.Legacy : InputDeliveryMode.Injected)
+                : IsWindowMessagesMode ? InputDeliveryMode.FocusFree
+                : InputDeliveryMode.Legacy;
+
+        /// <summary>Target computation used by the original Legacy implementation.</summary>
+        private IntPtr GetLegacyTarget()
+        {
+            IntPtr foregroundHwnd = GetForegroundWindow();
+            return (_targetHwnd != IntPtr.Zero && foregroundHwnd != _targetHwnd)
+                ? _targetHwnd
+                : IntPtr.Zero;
+        }
+
+        /// <summary>
+        /// Returns the window that should receive posted messages. Zero means SendInput to the
+        /// currently focused window. Background Injection uses its own synthetic event path.
+        /// </summary>
+        private bool TryGetInputTarget(out IntPtr target)
+        {
+            target = IntPtr.Zero;
+            if (_targetHwnd == IntPtr.Zero)
+                return !IsWindowMessagesMode && !IsInjectionMode;
+
+            if (IsInjectionMode)
+            {
+                // Focused game: use the normal real-input path. Unfocused: use the injected hook.
+                if (IsTargetForeground) return true;
+
+                GetWindowThreadProcessId(_targetTopHwnd, out uint pid);
+                return pid != 0 && _rawInjector.IsActiveFor((int)pid, _targetTopHwnd);
+            }
+
+            bool foreground = GetForegroundWindow() == _targetTopHwnd;
+            if (foreground) return true;
+
+            target = _targetHwnd;
+            return true;
+        }
+
+        private IntPtr GetCurrentTargetForRelease()
+        {
+            if (IsInjectionMode) return IntPtr.Zero;
+            if (_targetHwnd == IntPtr.Zero) return IntPtr.Zero;
+            return GetForegroundWindow() != _targetTopHwnd ? _targetHwnd : IntPtr.Zero;
+        }
+
+        private void RefreshTargetWindowIfNeeded()
+        {
+            // Legacy intentionally keeps the original behavior: target is resolved when the profile is selected or playback starts, not polled mid-song.
+            if (IsLegacyMode) return;
+
+            long now = Environment.TickCount64;
+            if (now - _lastTargetRefreshTick < 2000) return;
+            _lastTargetRefreshTick = now;
+
+            if (_targetTopHwnd == IntPtr.Zero || !InputSimulator.IsWindow(_targetTopHwnd) ||
+                _targetHwnd == IntPtr.Zero || !InputSimulator.IsWindow(_targetHwnd))
+            {
+                bool wasMissing = _targetHwnd == IntPtr.Zero;
+                SwitchToGameWindow();
+                if (wasMissing && _targetHwnd != IntPtr.Zero && _currentPlayingSong != null && !_isPreviewMode)
+                    PlayingSongTitle.Text = _currentPlayingSong.Title;
+
+                if (IsInjectionMode && _targetHwnd != IntPtr.Zero && _playback != null &&
+                    _playback.IsRunning && !_isPreviewMode)
+                {
+                    _ = EnsureBackgroundInjectionAsync();
+                }
+            }
+        }
+
+        private void KeepTargetWindowActive()
+        {
+            if (_playback == null || !_playback.IsRunning) return;
+
+            IntPtr foreground = GetForegroundWindow();
+            bool targetInForeground = foreground == _targetTopHwnd;
+            bool focusChanged = foreground != _lastForegroundHwnd;
+            _lastForegroundHwnd = foreground;
+
+            long now = Environment.TickCount64;
+            // React to an alt-tab immediately; otherwise refresh activation periodically.
+            if (now - _lastTargetActivationTick < 2000 && !(focusChanged && !targetInForeground)) return;
+            _lastTargetActivationTick = now;
+
+            if (IsInjectionMode)
+            {
+                _rawInjector.ActivateWindow();
+                return;
+            }
+
+            if (!IsWindowMessagesMode || _targetHwnd == IntPtr.Zero) return;
+            if (!targetInForeground)
+            {
+                InputDebugLog($"background activation target=0x{_targetHwnd.ToInt64():X} fg=0x{foreground.ToInt64():X} focusChanged={focusChanged}");
+                InputSimulator.ActivateBackgroundWindow(_targetHwnd);
+            }
+        }
+
+        private void ActivateTargetIfBackground()
+        {
+            if (!IsWindowMessagesMode || _targetHwnd == IntPtr.Zero) return;
+            if (GetForegroundWindow() == _targetTopHwnd) return;
+
+            _lastTargetActivationTick = Environment.TickCount64;
+            InputSimulator.ActivateBackgroundWindow(_targetHwnd);
+        }
+
+        private async System.Threading.Tasks.Task<bool> EnsureBackgroundInjectionAsync()
+        {
+            if (!IsInjectionMode || _targetTopHwnd == IntPtr.Zero) return false;
+
+            GetWindowThreadProcessId(_targetTopHwnd, out uint pid);
+            if (pid == 0) return false;
+
+            if (_rawInjector.IsActiveFor((int)pid, _targetTopHwnd))
+            {
+                _rawInjector.SetEnabled(true);
+                _rawInjector.ActivateWindow();
+                return true;
+            }
+
+            bool ok = await System.Threading.Tasks.Task.Run(
+                () => _rawInjector.Start((int)pid, _targetTopHwnd));
+            if (ok) _rawInjector.ActivateWindow();
+            InputDebugLog($"background injection pid={pid} hwnd=0x{_targetTopHwnd.ToInt64():X} ok={ok}");
+            return ok;
+        }
+
+        private void EnqueueInput(string key, IntPtr target, bool? isDown, InputDeliveryMode mode)
+        {
+            _inputQueue.Add(new QueuedInput(key, target, isDown, mode, Stopwatch.GetTimestamp()));
+        }
 
         private void StartInputProcessor()
         {
@@ -280,57 +579,406 @@ namespace PlayFlowMIDI
             {
                 foreach (var item in _inputQueue.GetConsumingEnumerable())
                 {
-                    if (item.IsDown == true) InputSimulator.SimulateKeyDown(item.Key, item.Target);
-                    else if (item.IsDown == false) InputSimulator.SimulateKeyUp(item.Key, item.Target);
-                    else InputSimulator.SimulateKeyPress(item.Key, item.Target);
-                    
+                    if (item.IsDown == null)
+                        ProcessPressBatch(item);
+                    else
+                        SendInputAction(item.Key, item.Target, item.IsDown, item.Mode);
+
                     // Small delay between inputs to ensure game registers them correctly
                     System.Threading.Thread.Sleep(1);
                 }
             });
         }
 
-        private void SwitchToGameWindow(bool forceForeground = false)
-        {
-            _targetHwnd = IntPtr.Zero;
-            string profileName = _config.LastSelectedProfile;
-            var profile = _config.Profiles.FirstOrDefault(p => p.Name == profileName);
-            if (profile != null && !string.IsNullOrEmpty(profile.ExeName))
-            {
-                var processName = Path.GetFileNameWithoutExtension(profile.ExeName);
-                var processes = Process.GetProcessesByName(processName);
-                
-                foreach (var process in processes)
-                {
-                    _targetHwnd = process.MainWindowHandle;
-                    
-                    if (_targetHwnd == IntPtr.Zero)
-                    {
-                        foreach (ProcessThread thread in process.Threads)
-                        {
-                            EnumThreadWindows(thread.Id, (hwnd, lParam) =>
-                            {
-                                if (IsWindowVisible(hwnd))
-                                {
-                                    _targetHwnd = hwnd;
-                                    return false;
-                                }
-                                return true;
-                            }, IntPtr.Zero);
-                            if (_targetHwnd != IntPtr.Zero) break;
-                        }
-                    }
+        private const double PressBatchSettleMs = 8;
+        private const double PressBatchMaxWaitMs = 40;
+        private const double PressBatchMaxSpanMs = 20;
+        private const int BackgroundChordHoldMs = 120;
 
-                    if (_targetHwnd != IntPtr.Zero)
+        /// <summary>
+        /// WWM/NTE use press-per-note input. Sending each note's down+up separately turns
+        /// chords into arpeggios when the game processes messages across frames. This groups
+        /// presses that belong to the same MIDI chord, sends every key down, holds, then
+        /// releases them. Grouping waits for a short quiet period instead of relying on the
+        /// processor thread waking up at exactly the right moment.
+        /// </summary>
+        private void ProcessPressBatch(QueuedInput first)
+        {
+            long collectStart = Stopwatch.GetTimestamp();
+            long lastAccepted = collectStart;
+            var batch = new List<QueuedInput> { first };
+            var deferred = new List<QueuedInput>();
+
+            while (true)
+            {
+                double waitedMs = (Stopwatch.GetTimestamp() - collectStart) * 1000.0 / Stopwatch.Frequency;
+                if (waitedMs >= PressBatchMaxWaitMs) break;
+
+                // Block briefly so chord notes dispatched a little later still join this batch. A 1 ms wait keeps the added latency small.
+                if (_inputQueue.TryTake(out QueuedInput next, 1))
+                {
+                    double spanMs = (next.Enqueued - first.Enqueued) * 1000.0 / Stopwatch.Frequency;
+                    if (next.IsDown == null && next.Target == first.Target && next.Mode == first.Mode &&
+                        spanMs <= PressBatchMaxSpanMs)
                     {
-                        if (profile.SwitchToWindow && forceForeground)
-                        {
-                            InputSimulator.SetForegroundWindow(_targetHwnd);
-                        }
+                        batch.Add(next);
+                        lastAccepted = Stopwatch.GetTimestamp();
+                    }
+                    else
+                    {
+                        deferred.Add(next);
                         break;
                     }
                 }
+                else
+                {
+                    double quietMs = (Stopwatch.GetTimestamp() - lastAccepted) * 1000.0 / Stopwatch.Frequency;
+                    if (quietMs >= PressBatchSettleMs) break;
+                }
             }
+
+            long sendStart = Stopwatch.GetTimestamp();
+            if (batch.Count > 1)
+            {
+                // One activation per chord, queued before any of its key-downs.
+                // Posting WM_ACTIVATE between the keys of a single chord makes some games
+                // re-evaluate their held keys and play the chord as separate notes.
+                NotifyBackgroundChordIfNeeded(batch[0]);
+
+                // A background game can drop to a low frame rate after you alt-tab.
+                // Keep the whole chord down long enough for its input loop to observe
+                // all of the keys; otherwise the notes are heard one after another.
+                int holdMs = Math.Max(10, _config.Settings.ReleaseDelay);
+                if (batch[0].Target != IntPtr.Zero)
+                    holdMs = Math.Max(holdMs, BackgroundChordHoldMs);
+
+                var chord = BeginChord(batch);
+                if (chord == null)
+                {
+                    // Unparseable combo: keep the old behavior rather than dropping notes.
+                    foreach (var item in batch)
+                        SendInputAction(item.Key, item.Target, true, item.Mode);
+
+                    System.Threading.Thread.Sleep(holdMs);
+
+                    foreach (var item in batch)
+                        SendInputAction(item.Key, item.Target, false, item.Mode);
+                }
+                else
+                {
+                    System.Threading.Thread.Sleep(holdMs);
+                    EndChord(chord, batch[0].Target, batch[0].Mode);
+                }
+
+                if (InputDebugEnabled)
+                {
+                    double collectMs = (sendStart - collectStart) * 1000.0 / Stopwatch.Frequency;
+                    double sendMs = (Stopwatch.GetTimestamp() - sendStart) * 1000.0 / Stopwatch.Frequency;
+                    InputDebugLog($"press batch n={batch.Count} groups={chord?.GroupCount ?? -1} mode={batch[0].Mode} " +
+                                  $"target=0x{batch[0].Target.ToInt64():X} collect={collectMs:F1}ms send={sendMs:F1}ms " +
+                                  $"hold={holdMs}ms keys={string.Join(",", batch.Select(b => b.Key))}");
+                }
+            }
+            else
+            {
+                NotifyBackgroundChordIfNeeded(first);
+                SendInputAction(first.Key, first.Target, null, first.Mode);
+
+                if (InputDebugEnabled)
+                {
+                    double collectMs = (Stopwatch.GetTimestamp() - collectStart) * 1000.0 / Stopwatch.Frequency;
+                    InputDebugLog($"press single mode={first.Mode} target=0x{first.Target.ToInt64():X} collect={collectMs:F1}ms key={first.Key}");
+                }
+            }
+
+            foreach (var item in deferred)
+                SendInputAction(item.Key, item.Target, item.IsDown, item.Mode);
+        }
+
+        private static void NotifyBackgroundChordIfNeeded(QueuedInput item)
+        {
+            if (item.Mode == InputDeliveryMode.FocusFree && item.Target != IntPtr.Zero)
+                InputSimulator.NotifyBackgroundWindowActive(item.Target);
+        }
+
+        private readonly record struct ChordKeyState(Keys Key, bool AltContext);
+
+        private sealed class ChordSequence
+        {
+            public List<ChordKeyState> KeysDown { get; } = new();
+            public List<ChordKeyState> ModifiersHeld { get; } = new();
+            public int GroupCount { get; set; }
+        }
+
+        /// <summary>
+        /// Presses the notes of one chord with each note's own modifier state. Notes are
+        /// grouped by modifier set: a group's modifiers are pressed, its main keys are
+        /// pressed, and in a mixed-modifier chord the modifiers are released again before
+        /// the next group. Without this, Shift+Z would leave Shift held while the next
+        /// plain note is pressed, turning that note into a different pitch.
+        /// </summary>
+        private ChordSequence? BeginChord(List<QueuedInput> batch)
+        {
+            IntPtr target = batch[0].Target;
+            InputDeliveryMode mode = batch[0].Mode;
+
+            var notes = new List<(Keys MainKey, List<Keys> Modifiers, string Signature)>();
+            foreach (var item in batch)
+            {
+                if (!InputSimulator.TryParseKeyCombo(item.Key, out Keys mainKey, out List<Keys> modifiers) ||
+                    mainKey == Keys.None)
+                {
+                    return null;
+                }
+                notes.Add((mainKey, modifiers, ModifierSignature(modifiers)));
+            }
+
+            var groups = notes
+                .GroupBy(n => n.Signature)
+                .OrderBy(g => g.First().Modifiers.Count)
+                .ThenBy(g => g.Key, StringComparer.Ordinal)
+                .ToList();
+
+            var sequence = new ChordSequence { GroupCount = groups.Count };
+            bool keepModifiers = groups.Count == 1;
+
+            foreach (var group in groups)
+            {
+                var modifiers = group.First().Modifiers;
+                bool altContext = modifiers.Any(IsMenuKey);
+
+                foreach (var modifier in modifiers)
+                    SendChordKey(target, mode, modifier, true, altContext);
+
+                foreach (var note in group)
+                {
+                    int existing = sequence.KeysDown.FindIndex(k => k.Key == note.MainKey);
+                    if (existing >= 0)
+                    {
+                        // The same physical key can occur with different modifiers (e.g. E and Ctrl+E). Its old press must end before it is pressed again.
+                        var previous = sequence.KeysDown[existing];
+                        SendChordKey(target, mode, previous.Key, false, previous.AltContext);
+                        sequence.KeysDown.RemoveAt(existing);
+                    }
+
+                    SendChordKey(target, mode, note.MainKey, true, altContext);
+                    sequence.KeysDown.Add(new ChordKeyState(note.MainKey, altContext));
+                }
+
+                if (keepModifiers)
+                {
+                    foreach (var modifier in modifiers)
+                        sequence.ModifiersHeld.Add(new ChordKeyState(modifier, altContext));
+                }
+                else
+                {
+                    // Mixed-modifier chord: release this group's modifiers before the next group so its key-downs are not interpreted as modified notes.
+                    for (int i = modifiers.Count - 1; i >= 0; i--)
+                        SendChordKey(target, mode, modifiers[i], false, altContext);
+                }
+            }
+
+            return sequence;
+        }
+
+        private void EndChord(ChordSequence chord, IntPtr target, InputDeliveryMode mode)
+        {
+            for (int i = chord.KeysDown.Count - 1; i >= 0; i--)
+            {
+                var key = chord.KeysDown[i];
+                SendChordKey(target, mode, key.Key, false, key.AltContext);
+            }
+
+            for (int i = chord.ModifiersHeld.Count - 1; i >= 0; i--)
+            {
+                var modifier = chord.ModifiersHeld[i];
+                SendChordKey(target, mode, modifier.Key, false, modifier.AltContext);
+            }
+        }
+
+        private void SendChordKey(IntPtr target, InputDeliveryMode mode, Keys key, bool isDown, bool altContext)
+        {
+            if (mode == InputDeliveryMode.Injected)
+                _rawInjector.SendSingleKey(key, !isDown);
+            else
+                InputSimulator.SendSingleKeyState(target, key, isDown, mode, altContext);
+        }
+
+        private static bool IsMenuKey(Keys key) =>
+            key == Keys.LMenu || key == Keys.RMenu || key == Keys.Menu;
+
+        private static string ModifierSignature(List<Keys> modifiers)
+        {
+            if (modifiers.Count == 0) return string.Empty;
+            return string.Join("+", modifiers.Select(m => (int)m).Distinct().OrderBy(v => v));
+        }
+
+        private void SendInputAction(string key, IntPtr target, bool? isDown, InputDeliveryMode mode)
+        {
+            if (mode == InputDeliveryMode.Injected)
+                _rawInjector.SendKeyCombo(key, isDown);
+            else if (isDown == true)
+                InputSimulator.SimulateKeyDown(key, target, mode);
+            else if (isDown == false)
+                InputSimulator.SimulateKeyUp(key, target, mode);
+            else
+                InputSimulator.SimulateKeyPress(key, target, mode);
+        }
+
+        private void SwitchToGameWindow(bool forceForeground = false)
+        {
+            InputDebugLog($"SwitchToGameWindow: begin mode={EffectiveInputMode} force={forceForeground}");
+            _targetHwnd = IntPtr.Zero;
+            _targetTopHwnd = IntPtr.Zero;
+
+            string profileName = _config.LastSelectedProfile;
+            var profile = _config.Profiles.FirstOrDefault(p => p.Name == profileName);
+            if (profile == null || string.IsNullOrEmpty(profile.ExeName)) return;
+
+            var processName = Path.GetFileNameWithoutExtension(profile.ExeName);
+            Process[] processes;
+            try
+            {
+                processes = Process.GetProcessesByName(processName);
+            }
+            catch
+            {
+                return;
+            }
+
+            var processIds = new HashSet<uint>();
+            IntPtr fallbackWindow = IntPtr.Zero;
+
+            // Legacy keeps the original target discovery: MainWindowHandle, then the first visible thread window. The improved picker is only for new modes.
+            if (IsLegacyMode)
+            {
+                try
+                {
+                    foreach (var process in processes)
+                    {
+                        IntPtr legacyTarget = IntPtr.Zero;
+                        try { legacyTarget = process.MainWindowHandle; } catch { }
+
+                        if (legacyTarget == IntPtr.Zero)
+                        {
+                            try
+                            {
+                                foreach (ProcessThread thread in process.Threads)
+                                {
+                                    EnumThreadWindows(thread.Id, (hwnd, lParam) =>
+                                    {
+                                        if (IsWindowVisible(hwnd))
+                                        {
+                                            legacyTarget = hwnd;
+                                            return false;
+                                        }
+                                        return true;
+                                    }, IntPtr.Zero);
+                                    if (legacyTarget != IntPtr.Zero) break;
+                                }
+                            }
+                            catch { }
+                        }
+
+                        if (legacyTarget != IntPtr.Zero)
+                        {
+                            _targetTopHwnd = legacyTarget;
+                            _targetHwnd = legacyTarget;
+                            InputDebugLog($"SwitchToGameWindow LEGACY exe={profile.ExeName} target=0x{legacyTarget.ToInt64():X} class={GetWindowClassName(legacyTarget)} force={forceForeground} switch={profile.SwitchToWindow}");
+                            if (profile.SwitchToWindow && forceForeground)
+                                InputSimulator.SetForegroundWindow(legacyTarget);
+                            return;
+                        }
+                    }
+                }
+                finally
+                {
+                    foreach (var process in processes) process.Dispose();
+                }
+                return;
+            }
+
+            foreach (var process in processes)
+            {
+                try
+                {
+                    processIds.Add((uint)process.Id);
+                    if (fallbackWindow == IntPtr.Zero)
+                    {
+                        IntPtr mainWindow = process.MainWindowHandle;
+                        if (mainWindow != IntPtr.Zero && InputSimulator.IsWindow(mainWindow))
+                            fallbackWindow = mainWindow;
+                    }
+                }
+                catch { }
+                finally
+                {
+                    process.Dispose();
+                }
+            }
+
+            IntPtr target = FindBestGameWindow(processIds);
+            if (target == IntPtr.Zero) target = fallbackWindow;
+            if (target == IntPtr.Zero) return;
+
+            _targetTopHwnd = target;
+            _targetHwnd = target;
+            InputDebugLog($"SwitchToGameWindow mode={EffectiveInputMode} exe={profile.ExeName} target=0x{target.ToInt64():X} class={GetWindowClassName(target)} force={forceForeground} switch={profile.SwitchToWindow}");
+
+            if (profile.SwitchToWindow && forceForeground)
+            {
+                InputDebugLog($"Focus game window mode={EffectiveInputMode} target=0x{_targetTopHwnd.ToInt64():X}");
+                InputSimulator.SetForegroundWindow(_targetTopHwnd);
+            }
+        }
+
+        private static IntPtr FindBestGameWindow(HashSet<uint> processIds)
+        {
+            if (processIds.Count == 0) return IntPtr.Zero;
+
+            IntPtr largest = IntPtr.Zero;
+            IntPtr largestKnownGameWindow = IntPtr.Zero;
+            long largestArea = -1;
+            long largestKnownArea = -1;
+
+            EnumWindows((hwnd, lParam) =>
+            {
+                GetWindowThreadProcessId(hwnd, out uint pid);
+                if (!processIds.Contains(pid)) return true;
+                if (!IsWindowVisible(hwnd)) return true;
+                if ((GetWindowLong(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) != 0) return true;
+
+                GetWindowRect(hwnd, out RECT rect);
+                long width = Math.Max(0, rect.Right - rect.Left);
+                long height = Math.Max(0, rect.Bottom - rect.Top);
+                long area = width * height;
+                if (area <= 0) return true;
+
+                if (area > largestArea)
+                {
+                    largestArea = area;
+                    largest = hwnd;
+                }
+
+                string className = GetWindowClassName(hwnd);
+                if (KnownGameWindowClasses.Any(c => string.Equals(c, className, StringComparison.OrdinalIgnoreCase)) &&
+                    area > largestKnownArea)
+                {
+                    largestKnownArea = area;
+                    largestKnownGameWindow = hwnd;
+                }
+
+                return true;
+            }, IntPtr.Zero);
+
+            return largestKnownGameWindow != IntPtr.Zero ? largestKnownGameWindow : largest;
+        }
+
+        private static string GetWindowClassName(IntPtr hWnd)
+        {
+            var className = new StringBuilder(256);
+            GetClassName(hWnd, className, className.Capacity);
+            return className.ToString();
         }
 
         private async System.Threading.Tasks.Task SwitchToGameWindowAsync()
@@ -339,13 +987,13 @@ namespace PlayFlowMIDI
 
             string profileName = _config.LastSelectedProfile;
             var profile = _config.Profiles.FirstOrDefault(p => p.Name == profileName);
-            if (profile != null && profile.SwitchToWindow && _targetHwnd != IntPtr.Zero)
+            if (profile != null && profile.SwitchToWindow && _targetTopHwnd != IntPtr.Zero)
             {
                 // Wait up to 1 second for the window to become active
                 var stopwatch = Stopwatch.StartNew();
                 while (stopwatch.ElapsedMilliseconds < 1000)
                 {
-                    if (GetForegroundWindow() == _targetHwnd)
+                    if (GetForegroundWindow() == _targetTopHwnd)
                         break;
                     await System.Threading.Tasks.Task.Delay(100);
                 }
@@ -364,6 +1012,7 @@ namespace PlayFlowMIDI
                 
                 // Read MIDI and resolve overlapping notes of same pitch
                 var rawMidiFile = MidiFile.Read(song.FilePath);
+                InputDebugLog($"StartPlayback: midi read tracks={rawMidiFile.GetTrackChunks().Count()}");
 
                 if (_config.Settings.TrimLeadingSilence)
                 {
@@ -418,6 +1067,8 @@ namespace PlayFlowMIDI
                         notes.Add(processedNotes);
                     }
                 }
+
+                InputDebugLog("StartPlayback: notes processed");
 
                 // Automatically adapt to 15 keys if enabled
                 string profileName = _config.LastSelectedProfile;
@@ -502,7 +1153,13 @@ namespace PlayFlowMIDI
                     _currentMidiFile.Chunks.Add(newTrackChunk);
                 }
                 
+                InputDebugLog("StartPlayback: midi rebuilt");
                 _playback = _currentMidiFile.GetPlayback();
+                InputDebugLog("StartPlayback: playback created");
+                // DryWetMidi 8.x suppresses NoteOn/NoteOff events for a pitch that is already active on the same channel.
+                // Multi-track files that share a channel (and layered chords) lose events unless these are enabled.
+                _playback.SendNoteOnEventsForActiveNotes = true;
+                _playback.SendNoteOffEventsForNonActiveNotes = true;
                 _playback.Speed = _currentSpeed;
                 _playback.InterruptNotesOnStop = true;
                 
@@ -510,6 +1167,7 @@ namespace PlayFlowMIDI
                 _playback.Finished += OnPlaybackFinished;
 
                 var duration = _playback.GetDuration<MetricTimeSpan>();
+                InputDebugLog($"StartPlayback: duration={duration.TotalMicroseconds}us start={start}");
                 PlaybackSlider.Maximum = duration.TotalMicroseconds;
                 _isProgrammaticSliderUpdate = true;
                 if (startTime != null && startTime.TotalMicroseconds > 0)
@@ -528,7 +1186,23 @@ namespace PlayFlowMIDI
 
                 if (start)
                 {
-                    if (!_isPreviewMode) await SwitchToGameWindowAsync();
+                    if (!_isPreviewMode)
+                    {
+                        await SwitchToGameWindowAsync();
+                        if (IsInjectionMode)
+                        {
+                            if (_targetHwnd == IntPtr.Zero || !await EnsureBackgroundInjectionAsync())
+                                PlayingSongTitle.Text = $"{song.Title} — background injection failed (see logs)";
+                        }
+                        else if (IsWindowMessagesMode && _targetHwnd == IntPtr.Zero)
+                        {
+                            PlayingSongTitle.Text = $"{song.Title} — game window not found (check the executable name in Profiles)";
+                        }
+                        else
+                        {
+                            ActivateTargetIfBackground();
+                        }
+                    }
                     _playback.Start();
                     _isPlaying = true;
                     _isAutoPaused = false;
@@ -563,6 +1237,7 @@ namespace PlayFlowMIDI
             }
             catch (Exception ex)
             {
+                InputDebugLog($"StartPlayback error: {ex}");
                 System.Windows.MessageBox.Show($"Error playing MIDI: {ex.Message}");
             }
         }
@@ -612,19 +1287,55 @@ namespace PlayFlowMIDI
         {
             while (_inputQueue.Count > 0) _inputQueue.TryTake(out _);
 
-            IntPtr foregroundHwnd = GetForegroundWindow();
-            IntPtr target = (_targetHwnd != IntPtr.Zero && foregroundHwnd != _targetHwnd) ? _targetHwnd : IntPtr.Zero;
+            bool usedInjection = false;
+            bool usedReal = false;
 
             foreach (var kvp in _pitchToKey)
             {
-                InputSimulator.SimulateKeyUp(kvp.Value, target);
+                InputDeliveryMode mode = _pitchMode.TryGetValue(kvp.Key, out var storedMode)
+                    ? storedMode : CurrentInputMode;
+                IntPtr storedTarget = _pitchTarget.TryGetValue(kvp.Key, out IntPtr t) ? t : IntPtr.Zero;
+
+                if (mode == InputDeliveryMode.Injected)
+                {
+                    _rawInjector.SendKeyCombo(kvp.Value, false);
+                    usedInjection = true;
+                    continue;
+                }
+
+                IntPtr target = mode == InputDeliveryMode.Legacy
+                    ? (IsLegacyMode ? GetLegacyTarget() : storedTarget)
+                    : storedTarget;
+                InputSimulator.SimulateKeyUp(kvp.Value, target, mode);
+                usedReal = true;
             }
+
             _pitchToKey.Clear();
+            _pitchTarget.Clear();
+            _pitchMode.Clear();
             _pitchActiveCount.Clear();
             foreach (var token in _noteReleaseTokens.Values) token.Cancel();
             _noteReleaseTokens.Clear();
 
-            InputSimulator.ReleaseAllKeys(target);
+            if (usedInjection) _rawInjector.ReleaseModifiers();
+            if (IsInjectionMode) _rawInjector.DisableAfterDelay(600);
+
+            if (usedReal || IsLegacyMode || IsWindowMessagesMode)
+            {
+                InputDeliveryMode releaseMode = IsWindowMessagesMode
+                    ? InputDeliveryMode.FocusFree
+                    : InputDeliveryMode.Legacy;
+                IntPtr releaseTarget = IsLegacyMode
+                    ? GetLegacyTarget()
+                    : IsWindowMessagesMode ? GetCurrentTargetForRelease() : IntPtr.Zero;
+                InputSimulator.ReleaseAllKeys(releaseTarget, releaseMode);
+            }
+
+            if (IsWindowMessagesMode && _targetTopHwnd != IntPtr.Zero &&
+                GetForegroundWindow() != _targetTopHwnd)
+            {
+                InputSimulator.DeactivateBackgroundWindow(_targetTopHwnd);
+            }
         }
 
         private void StopButton_Click(object sender, RoutedEventArgs e)
@@ -914,12 +1625,12 @@ namespace PlayFlowMIDI
 
             if (!string.IsNullOrEmpty(keyToPress))
             {
-                IntPtr foregroundHwnd = GetForegroundWindow();
-                IntPtr target = (_targetHwnd != IntPtr.Zero && foregroundHwnd != _targetHwnd) ? _targetHwnd : IntPtr.Zero;
+                if (!TryGetInputTarget(out IntPtr target)) return;
+                InputDeliveryMode deliveryMode = CurrentInputMode;
 
                 if ((profileName == "Where Winds Meet") || (profileName == "Neverness to Everness"))
                 {
-                    _inputQueue.Add((keyToPress, target, null));
+                    EnqueueInput(keyToPress, target, null, deliveryMode);
                     return;
                 }
 
@@ -937,7 +1648,12 @@ namespace PlayFlowMIDI
                 {
                     if (_pitchActiveCount.TryGetValue(noteNumber, out int count) && count > 0)
                     {
-                        _inputQueue.Add((keyToPress, target, false));
+                        InputDeliveryMode oldMode = _pitchMode.TryGetValue(noteNumber, out var storedMode)
+                            ? storedMode : deliveryMode;
+                        IntPtr oldTarget = oldMode == InputDeliveryMode.Legacy
+                            ? GetLegacyTarget()
+                            : (_pitchTarget.TryGetValue(noteNumber, out var storedTarget) ? storedTarget : target);
+                        EnqueueInput(keyToPress, oldTarget, false, oldMode);
                     }
                     else
                     {
@@ -946,18 +1662,28 @@ namespace PlayFlowMIDI
 
                     _pitchActiveCount[noteNumber] = count + 1;
                     _pitchToKey[noteNumber] = keyToPress;
-                    _inputQueue.Add((keyToPress, target, true));
+                    _pitchTarget[noteNumber] = target;
+                    _pitchMode[noteNumber] = deliveryMode;
+                    EnqueueInput(keyToPress, target, true, deliveryMode);
                 }
                 else
                 {
+                    InputDeliveryMode oldMode = _pitchMode.TryGetValue(noteNumber, out var storedMode)
+                        ? storedMode : deliveryMode;
+                    IntPtr oldTarget = oldMode == InputDeliveryMode.Legacy
+                        ? GetLegacyTarget()
+                        : (_pitchTarget.TryGetValue(noteNumber, out var storedTarget) ? storedTarget : target);
+
                     if (_noteReleaseTokens.ContainsKey(noteNumber))
                     {
-                        _inputQueue.Add((keyToPress, target, false));
+                        EnqueueInput(keyToPress, oldTarget, false, oldMode);
                         if (_noteReleaseTokens.TryGetValue(noteNumber, out var oldToken)) oldToken.Cancel();
                     }
 
-                    _inputQueue.Add((keyToPress, target, true));
+                    EnqueueInput(keyToPress, target, true, deliveryMode);
                     _pitchToKey[noteNumber] = keyToPress;
+                    _pitchTarget[noteNumber] = target;
+                    _pitchMode[noteNumber] = deliveryMode;
 
                     var cts = new System.Threading.CancellationTokenSource();
                     _noteReleaseTokens[noteNumber] = cts;
@@ -970,7 +1696,7 @@ namespace PlayFlowMIDI
                             await System.Threading.Tasks.Task.Delay(delay, cts.Token);
                             if (!cts.IsCancellationRequested)
                             {
-                                Dispatcher.BeginInvoke(new Action(() => {
+                                _ = Dispatcher.BeginInvoke(new Action(() => {
                                     if (_noteReleaseTokens.TryGetValue(noteNumber, out var currentToken) && currentToken == cts)
                                     {
                                         HandleNoteOff(noteNumber);
@@ -995,14 +1721,18 @@ namespace PlayFlowMIDI
             string profileName = _config.LastSelectedProfile;
             if ((profileName == "Where Winds Meet") || (profileName == "Neverness to Everness")) return;
 
-            if (!_config.Settings.HoldNotes) 
+            if (!_config.Settings.HoldNotes)
             {
                 if (_pitchToKey.TryGetValue(noteNumber, out string? keyToRelease))
                 {
-                    IntPtr foregroundHwnd = GetForegroundWindow();
-                    IntPtr target = (_targetHwnd != IntPtr.Zero && foregroundHwnd != _targetHwnd) ? _targetHwnd : IntPtr.Zero;
-                    _inputQueue.Add((keyToRelease, target, false));
+                    InputDeliveryMode mode = _pitchMode.TryGetValue(noteNumber, out var storedMode) ? storedMode : CurrentInputMode;
+                    IntPtr target = mode == InputDeliveryMode.Legacy
+                        ? GetLegacyTarget()
+                        : (_pitchTarget.TryGetValue(noteNumber, out IntPtr storedTarget) ? storedTarget : IntPtr.Zero);
+                    EnqueueInput(keyToRelease, target, false, mode);
                     _pitchToKey.Remove(noteNumber);
+                    _pitchTarget.Remove(noteNumber);
+                    _pitchMode.Remove(noteNumber);
                 }
                 return;
             }
@@ -1010,15 +1740,19 @@ namespace PlayFlowMIDI
             if (_pitchActiveCount.TryGetValue(noteNumber, out int count) && count > 0)
             {
                 _pitchActiveCount[noteNumber] = --count;
-                
+
                 if (count == 0)
                 {
                     if (_pitchToKey.TryGetValue(noteNumber, out string? keyToRelease))
                     {
-                        IntPtr foregroundHwnd = GetForegroundWindow();
-                        IntPtr target = (_targetHwnd != IntPtr.Zero && foregroundHwnd != _targetHwnd) ? _targetHwnd : IntPtr.Zero;
-                        _inputQueue.Add((keyToRelease, target, false));
+                        InputDeliveryMode mode = _pitchMode.TryGetValue(noteNumber, out var storedMode) ? storedMode : CurrentInputMode;
+                        IntPtr target = mode == InputDeliveryMode.Legacy
+                            ? GetLegacyTarget()
+                            : (_pitchTarget.TryGetValue(noteNumber, out IntPtr storedTarget) ? storedTarget : IntPtr.Zero);
+                        EnqueueInput(keyToRelease, target, false, mode);
                         _pitchToKey.Remove(noteNumber);
+                        _pitchTarget.Remove(noteNumber);
+                        _pitchMode.Remove(noteNumber);
                     }
                     _pitchActiveCount.Remove(noteNumber);
                 }
@@ -1112,6 +1846,127 @@ namespace PlayFlowMIDI
             _currentTranspose = (int)PitchSlider.Value;
         }
 
+        private bool ConfirmInjectionMode()
+        {
+            if (_injectionWarningShown) return true;
+
+            var choice = System.Windows.MessageBox.Show(
+                "Background Injection loads a hook into the game process.\n\n" +
+                "Anti-cheat software may detect or block it, and your game account could be banned. " +
+                "Use it only if you accept that risk.\n\nContinue?",
+                "Background Injection - risky",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (choice != MessageBoxResult.Yes) return false;
+
+            _injectionWarningShown = true;
+            return true;
+        }
+
+        private void SelectGlobalInputModeRadio(string? mode)
+        {
+            string normalized = NormalizeInputMode(mode);
+            bool wasLoading = _isLoading;
+            _isLoading = true;
+            if (normalized == "Injection") InputModeInjectionRadio.IsChecked = true;
+            else if (normalized == "FocusFree") InputModeWindowMessagesRadio.IsChecked = true;
+            else InputModeLegacyRadio.IsChecked = true;
+            _isLoading = wasLoading;
+        }
+
+        private string GetProfileInputModeFromCombo()
+        {
+            return NormalizeInputMode((ProfileInputModeComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString());
+        }
+
+        private void SetProfileInputModeCombo(string? mode)
+        {
+            string normalized = NormalizeInputMode(mode);
+            InputDebugLog($"SetProfileInputModeCombo: mode='{mode}' normalized='{normalized}'");
+            bool wasLoading = _isLoading;
+            _isLoading = true;
+
+            int index = 0;
+            for (int i = 0; i < ProfileInputModeComboBox.Items.Count; i++)
+            {
+                if (ProfileInputModeComboBox.Items[i] is ComboBoxItem item &&
+                    string.Equals(NormalizeInputMode(item.Tag?.ToString()), normalized, StringComparison.OrdinalIgnoreCase))
+                {
+                    index = i;
+                    break;
+                }
+            }
+            ProfileInputModeComboBox.SelectedIndex = index;
+            InputDebugLog($"SetProfileInputModeCombo: selected index={index}");
+
+            _isLoading = wasLoading;
+        }
+
+        private void ApplyEffectiveInputModeChange(string oldMode, string newMode)
+        {
+            if (string.Equals(oldMode, newMode, StringComparison.OrdinalIgnoreCase)) return;
+
+            if (oldMode == "Injection" && newMode != "Injection")
+            {
+                ReleaseActiveKeys();
+                _rawInjector.Stop();
+            }
+            else if (newMode == "Injection" && _playback != null && _playback.IsRunning && !_isPreviewMode)
+            {
+                _ = EnsureBackgroundInjectionAsync();
+            }
+        }
+
+        private void InputModeChanged(object sender, RoutedEventArgs e)
+        {
+            if (_isLoading) return;
+
+            string newMode = InputModeInjectionRadio.IsChecked == true ? "Injection"
+                           : InputModeWindowMessagesRadio.IsChecked == true ? "FocusFree"
+                           : "Legacy";
+            if (string.Equals(_config.Settings.InputMode, newMode, StringComparison.OrdinalIgnoreCase)) return;
+
+            if (newMode == "Injection" && !ConfirmInjectionMode())
+            {
+                SelectGlobalInputModeRadio(_config.Settings.InputMode);
+                return;
+            }
+
+            string oldEffective = EffectiveInputMode;
+            _config.Settings.InputMode = newMode;
+            string newEffective = EffectiveInputMode;
+
+            ApplyEffectiveInputModeChange(oldEffective, newEffective);
+            SaveConfig();
+        }
+
+        private void ProfileInputModeChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isLoading) return;
+            if (ProfileList.SelectedItem is not ListBoxItem selectedItem) return;
+
+            string profileName = selectedItem.Content?.ToString() ?? "";
+            var profile = _config.Profiles.FirstOrDefault(p => p.Name == profileName);
+            if (profile == null) return;
+
+            string oldOverride = profile.InputMode ?? string.Empty;
+            string newOverride = GetProfileInputModeFromCombo();
+            if (string.Equals(NormalizeInputMode(oldOverride), newOverride, StringComparison.OrdinalIgnoreCase)) return;
+
+            string oldEffective = EffectiveInputMode;
+            profile.InputMode = newOverride;
+
+            string newEffective = EffectiveInputMode;
+            if (newEffective == "Injection" && oldEffective != "Injection" && !ConfirmInjectionMode())
+            {
+                profile.InputMode = oldOverride;
+                SetProfileInputModeCombo(oldOverride);
+                return;
+            }
+
+            ApplyEffectiveInputModeChange(oldEffective, newEffective);
+            SaveConfig();
+        }
+
         private void SpeedSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             UpdateSpeedUI();
@@ -1157,6 +2012,7 @@ namespace PlayFlowMIDI
 
         private void ApplyConfig()
         {
+            InputDebugLog("ApplyConfig: begin");
             if (_config.Window.Left != -1)
             {
                 this.Left = _config.Window.Left;
@@ -1179,6 +2035,23 @@ namespace PlayFlowMIDI
             }
             
             ShuffleCheckBox.IsChecked = _config.Main.Shuffle;
+
+            string inputMode = _config.Settings.InputMode ?? string.Empty;
+            string globalInputMode = NormalizeInputMode(inputMode);
+            if (string.IsNullOrEmpty(globalInputMode))
+            {
+                // Named experimental modes from older builds have no direct replacement.
+                // Keep them on Legacy; everything else uses the current default.
+                bool oldExperimentalMode =
+                    string.Equals(inputMode, "Background", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(inputMode, "FocusAssist", StringComparison.OrdinalIgnoreCase);
+                globalInputMode = oldExperimentalMode ? "Legacy" : "FocusFree";
+            }
+            _config.Settings.InputMode = globalInputMode;
+
+            if (globalInputMode == "Injection") InputModeInjectionRadio.IsChecked = true;
+            else if (globalInputMode == "FocusFree") InputModeWindowMessagesRadio.IsChecked = true;
+            else InputModeLegacyRadio.IsChecked = true;
 
             ShortcutPlayPause.Text = _config.Settings.ShortcutPlayPause;
             ShortcutStop.Text = _config.Settings.ShortcutStop;
@@ -1284,6 +2157,7 @@ namespace PlayFlowMIDI
                 ExeNameBox.Text = profile.ExeName;
                 SwitchToWindowCheck.IsChecked = profile.SwitchToWindow;
                 AutoPauseCheck.IsChecked = profile.AutoPause;
+                SetProfileInputModeCombo(profile.InputMode);
 
                 if (profile.SelectedMode == "37") MainMode37.IsChecked = true;
                 else if (profile.SelectedMode == "36") MainMode36.IsChecked = true;
@@ -1292,11 +2166,13 @@ namespace PlayFlowMIDI
             }
 
             UpdateTooltips();
+            InputDebugLog("ApplyConfig: done");
         }
 
         private void SaveConfig()
         {
             if (_isLoading) return;
+            InputDebugLog("SaveConfig: begin");
 
             _config.Window.Left = this.Left;
             _config.Window.Top = this.Top;
@@ -1356,6 +2232,9 @@ namespace PlayFlowMIDI
 
             _config.Settings.Speed = SpeedSlider.Value;
             _config.Settings.Pitch = (int)PitchSlider.Value;
+            _config.Settings.InputMode = InputModeInjectionRadio.IsChecked == true ? "Injection"
+                                       : InputModeWindowMessagesRadio.IsChecked == true ? "FocusFree"
+                                       : "Legacy";
 
             if (ProfileList.SelectedItem is ListBoxItem selectedItem)
             {
@@ -1372,6 +2251,7 @@ namespace PlayFlowMIDI
                 profile.ExeName = ExeNameBox.Text;
                 profile.SwitchToWindow = SwitchToWindowCheck.IsChecked ?? false;
                 profile.AutoPause = AutoPauseCheck.IsChecked ?? false;
+                profile.InputMode = GetProfileInputModeFromCombo();
                 
                 if (Mode37.IsChecked == true || MainMode37.IsChecked == true) profile.SelectedMode = "37";
                 else if (Mode36.IsChecked == true || MainMode36.IsChecked == true) profile.SelectedMode = "36";
@@ -1429,8 +2309,9 @@ namespace PlayFlowMIDI
 
             _config.Save();
             RegisterAllHotKeys();
-            
+
             if (!_isLoading) SwitchToGameWindow();
+            InputDebugLog("SaveConfig: done");
         }
 
         private void SaveGridKeys(ProfileConfig profile, System.Windows.Controls.Panel panel, string name)
@@ -1463,8 +2344,9 @@ namespace PlayFlowMIDI
                 SetGridKeys(Keys15Grid2, new[] { "A", "S", "D", "F", "G", "H", "J" });
 
                 ExeNameBox.Text = "xdt.exe";
-                SwitchToWindowCheck.IsChecked = true;
-                AutoPauseCheck.IsChecked = true;
+                SwitchToWindowCheck.IsChecked = false;
+                AutoPauseCheck.IsChecked = false;
+                SetProfileInputModeCombo("Injection");
                 Mode37.IsChecked = true;
             }
             else if (profileName == "Where Winds Meet")
@@ -1476,6 +2358,7 @@ namespace PlayFlowMIDI
                 ExeNameBox.Text = "wwm.exe";
                 SwitchToWindowCheck.IsChecked = false;
                 AutoPauseCheck.IsChecked = false;
+                SetProfileInputModeCombo("FocusFree");
                 Mode36.IsChecked = true;
             }
             else if (profileName == "Neverness to Everness")
@@ -1485,8 +2368,9 @@ namespace PlayFlowMIDI
                 SetGridKeys(Keys36Grid3, new[] { "Z", "Shift+Z", "X", "Ctrl+C", "C", "V", "Shift+V", "B", "Shift+B", "N", "Ctrl+M", "M" });
 
                 ExeNameBox.Text = "HTGame.exe";
-                SwitchToWindowCheck.IsChecked = true;
-                AutoPauseCheck.IsChecked = true;
+                SwitchToWindowCheck.IsChecked = false;
+                AutoPauseCheck.IsChecked = false;
+                SetProfileInputModeCombo("FocusFree");
                 Mode36.IsChecked = true;
             }
             else
@@ -1502,6 +2386,7 @@ namespace PlayFlowMIDI
                 ExeNameBox.Text = "";
                 SwitchToWindowCheck.IsChecked = false;
                 AutoPauseCheck.IsChecked = false;
+                SetProfileInputModeCombo(string.Empty);
             }
 
             UpdateModeVisibility();
@@ -2233,11 +3118,13 @@ namespace PlayFlowMIDI
         private void ProfileList_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (ProfileList.SelectedItem is not ListBoxItem selectedItem) return;
-            
+
             bool wasLoading = _isLoading;
             _isLoading = true;
+            string oldEffective = EffectiveInputMode;
 
             string profileName = selectedItem.Content?.ToString() ?? "";
+            InputDebugLog($"ProfileList_Changed: begin profile={profileName}");
             var profile = _config.Profiles.FirstOrDefault(p => p.Name == profileName);
 
             if (profile != null)
@@ -2281,6 +3168,7 @@ namespace PlayFlowMIDI
                 ExeNameBox.Text = profile.ExeName;
                 SwitchToWindowCheck.IsChecked = profile.SwitchToWindow;
                 AutoPauseCheck.IsChecked = profile.AutoPause;
+                SetProfileInputModeCombo(profile.InputMode);
 
                 foreach (var item in ActiveProfileComboBox.Items)
                 {
@@ -2333,7 +3221,9 @@ namespace PlayFlowMIDI
             _isLoading = wasLoading;
             _config.LastSelectedProfile = profileName;
             SwitchToGameWindow();
+            if (!wasLoading) ApplyEffectiveInputModeChange(oldEffective, EffectiveInputMode);
             SaveConfig();
+            InputDebugLog($"ProfileList_Changed: done profile={profileName}");
         }
 
         private void ModeChanged(object sender, RoutedEventArgs e)
@@ -2814,8 +3704,8 @@ namespace PlayFlowMIDI
 
         private bool IsTargetWindowFocused()
         {
-            if (_targetHwnd == IntPtr.Zero) return false;
-            return GetForegroundWindow() == _targetHwnd;
+            if (_targetTopHwnd == IntPtr.Zero) return false;
+            return GetForegroundWindow() == _targetTopHwnd;
         }
 
         private void ShowSongNotification(MidiSong song)
@@ -2827,7 +3717,7 @@ namespace PlayFlowMIDI
                 song.Title,
                 song.Duration,
                 _config.Settings.NotificationPosition,
-                _targetHwnd);
+                _targetTopHwnd);
         }
 
         private void ShowModeNotification(string modeName)
@@ -2846,7 +3736,7 @@ namespace PlayFlowMIDI
             NotificationWindow.ShowMode(
                 label,
                 _config.Settings.NotificationPosition,
-                _targetHwnd);
+                _targetTopHwnd);
         }
 
         protected override void OnClosed(EventArgs e)
@@ -2854,6 +3744,7 @@ namespace PlayFlowMIDI
             UnregisterAllHotKeys();
             _hwndSource?.RemoveHook(HwndHook);
             StopPlayback();
+            _rawInjector.Dispose();
             base.OnClosed(e);
         }
 

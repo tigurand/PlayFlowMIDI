@@ -8,6 +8,7 @@ namespace PlayFlowMIDI
 {
     public class AppConfig
     {
+        public int ConfigVersion { get; set; } = 0;
         public MainConfig Main { get; set; } = new();
         public SettingsConfig Settings { get; set; } = new();
         public List<ProfileConfig> Profiles { get; set; } = new();
@@ -92,6 +93,7 @@ namespace PlayFlowMIDI
         public int Pitch { get; set; } = 0;
         public bool NotificationsEnabled { get; set; } = true;
         public string NotificationPosition { get; set; } = "BottomRight"; // TopRight, BottomRight, TopLeft, BottomLeft
+        public string InputMode { get; set; } = "FocusFree"; // Legacy, FocusFree, Injection
     }
 
     public class ProfileConfig
@@ -103,6 +105,7 @@ namespace PlayFlowMIDI
         public string SelectedMode { get; set; } = string.Empty; // 37, 36, 15
         public bool IsDefault { get; set; } = false;
         public Dictionary<string, List<string>> KeyMappings { get; set; } = new();
+        public string InputMode { get; set; } = string.Empty; // empty = use global setting
     }
 
     public class WindowConfig

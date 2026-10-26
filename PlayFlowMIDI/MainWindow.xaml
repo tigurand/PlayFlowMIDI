@@ -307,7 +307,8 @@
             </Grid>
 
             <!-- SETTINGS CONTENT -->
-            <StackPanel Grid.Row="1" Margin="10">
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="10">
+            <StackPanel Margin="0">
 
                 <!-- SHORTCUTS -->
                 <GroupBox Header="Keyboard Shortcuts" Foreground="White" Margin="0,0,0,10">
@@ -368,6 +369,35 @@
                         <CheckBox x:Name="DisablePercussionCheck" Content="Disable percussion by default" Foreground="White" IsChecked="True" Margin="0,0,0,5" Click="SaveTrigger"/>
 
                         <CheckBox x:Name="AutoAdapt15KeysCheck" Content="Automatically adapt to 15 keys" Foreground="White" IsChecked="False" Click="SaveTrigger" ToolTip="Only works when '15 Keys' mode is selected."/>
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- INPUT METHOD -->
+                <GroupBox Header="Input Method" Foreground="White" Margin="0,0,0,10">
+                    <StackPanel Margin="10">
+                        <RadioButton x:Name="InputModeLegacyRadio"
+                                     Content="Legacy"
+                                     Foreground="White"
+                                     Checked="InputModeChanged"
+                                     ToolTip="Original focused-input behavior"/>
+                        <TextBlock Text="Real keyboard input while the game is focused, plain window messages while it is unfocused. Background play isn't supported for most games."
+                                   Foreground="#AAAAAA" FontSize="11" TextWrapping="Wrap" Margin="20,0,0,8"/>
+
+                        <RadioButton x:Name="InputModeWindowMessagesRadio"
+                                     Content="Focus-Free (default)"
+                                     Foreground="White"
+                                     Checked="InputModeChanged"
+                                     ToolTip="Send key messages without taking focus"/>
+                        <TextBlock Text="Sends key messages directly to the game window without taking focus. No DLL injection or drivers. Only works with games that process window messages; games using only Raw Input or Unity's focused input will ignore it."
+                                   Foreground="#AAAAAA" FontSize="11" TextWrapping="Wrap" Margin="20,0,0,8"/>
+
+                        <RadioButton x:Name="InputModeInjectionRadio"
+                                     Content="Background Injection (experimental, risky)"
+                                     Foreground="White"
+                                     Checked="InputModeChanged"
+                                     ToolTip="Inject a small hook into the game process for true background input"/>
+                        <TextBlock Text="Injects a small hook into the game process and feeds synthetic raw keyboard events, so the game plays while you work in another tab without taking focus. Works with some games. Anti-cheat may detect or block this, and accounts can be banned. Use at your own risk."
+                                   Foreground="#FFB0B0" FontSize="11" TextWrapping="Wrap" Margin="20,0,0,0"/>
                     </StackPanel>
                 </GroupBox>
 
@@ -445,6 +475,7 @@
                 </GroupBox>
 
             </StackPanel>
+            </ScrollViewer>
 
         </Grid>
 
@@ -553,6 +584,27 @@
                         <CheckBox x:Name="AutoPauseCheck"
                           Content="Automatically pause when game is inactive"
                           Foreground="White" Margin="0,5,0,0" Click="SaveTrigger"/>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Text="Input Method:"
+                               Width="140"
+                               Foreground="White"
+                               VerticalAlignment="Center"/>
+                            <ComboBox x:Name="ProfileInputModeComboBox"
+                               Width="250"
+                               Height="26"
+                               SelectionChanged="ProfileInputModeChanged">
+                                <ComboBoxItem Content="Use global setting" Tag=""/>
+                                <ComboBoxItem Content="Legacy" Tag="Legacy"/>
+                                <ComboBoxItem Content="Focus-Free" Tag="FocusFree"/>
+                                <ComboBoxItem Content="Background Injection (risky)" Tag="Injection"/>
+                            </ComboBox>
+                        </StackPanel>
+                        <TextBlock Text="Overrides Settings → Input Method for this game profile."
+                           Foreground="#999999"
+                           FontSize="11"
+                           TextWrapping="Wrap"
+                           Margin="140,4,0,0"/>
 
                     </StackPanel>
 
