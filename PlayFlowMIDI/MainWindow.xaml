@@ -124,7 +124,7 @@
                     </Grid>
 
                     <!-- PLAYLIST TABLE -->
-                    <ListView x:Name="PlaylistListView" Background="#1B1B1B" BorderThickness="0" SizeChanged="PlaylistListView_SizeChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionMode="Extended" AllowDrop="True" PreviewMouseLeftButtonDown="PlaylistListView_PreviewMouseLeftButtonDown" MouseMove="PlaylistListView_MouseMove" Drop="PlaylistListView_Drop" SelectionChanged="PlaylistListView_SelectionChanged" MouseDoubleClick="PlaylistListView_MouseDoubleClick">
+                    <ListView x:Name="PlaylistListView" Background="#1B1B1B" BorderThickness="0" SizeChanged="PlaylistListView_SizeChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionMode="Extended" AllowDrop="True" PreviewMouseLeftButtonDown="PlaylistListView_PreviewMouseLeftButtonDown" MouseMove="PlaylistListView_MouseMove" Drop="PlaylistListView_Drop" MouseDoubleClick="PlaylistListView_MouseDoubleClick">
                         <ListView.Resources>
                             <Style TargetType="{x:Type GridViewColumnHeader}">
                                 <Setter Property="IsHitTestVisible" Value="False"/>

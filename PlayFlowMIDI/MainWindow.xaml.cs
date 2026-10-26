@@ -57,6 +57,7 @@ namespace PlayFlowMIDI
         private bool _injectionWarningShown = false;
         private DispatcherTimer? _uiTimer;
         private MidiSong? _currentPlayingSong;
+        private MidiSong? _tracksSong;
         private List<int> _shuffleIndices = new();
         private List<int> _previousShuffle = new();
         private int _shufflePosition = -1;
@@ -227,14 +228,14 @@ namespace PlayFlowMIDI
         {
             if (_playback == null)
             {
-                var selectedSong = PlaylistListView.SelectedItem as MidiSong;
-                if (selectedSong != null)
+                var song = _currentPlayingSong;
+                if (song != null)
                 {
                     _isPreviewMode = isPreview;
                     MetricTimeSpan? sliderStart = PlaybackSlider.Value > 0
                         ? new MetricTimeSpan((long)PlaybackSlider.Value)
                         : null;
-                    await StartPlayback(selectedSong, startTime: sliderStart);
+                    await StartPlayback(song, startTime: sliderStart);
                 }
             }
             else
@@ -1009,7 +1010,8 @@ namespace PlayFlowMIDI
             try
             {
                 _currentPlayingSong = song;
-                
+                ShowTracksForSong(song);
+
                 // Read MIDI and resolve overlapping notes of same pitch
                 var rawMidiFile = MidiFile.Read(song.FilePath);
                 InputDebugLog($"StartPlayback: midi read tracks={rawMidiFile.GetTrackChunks().Count()}");
@@ -2188,10 +2190,6 @@ namespace PlayFlowMIDI
             {
                 _config.Main.LastPlayedSongPath = _currentPlayingSong.FilePath;
             }
-            else if (_playback == null && PlaylistListView.SelectedItem is MidiSong selected)
-            {
-                _config.Main.LastPlayedSongPath = selected.FilePath;
-            }
             
             if (PlayOnceRadio.IsChecked == true) _config.Main.PlaybackMode = "PlayOnce";
             else if (RepeatSongRadio.IsChecked == true) _config.Main.PlaybackMode = "RepeatSong";
@@ -2549,11 +2547,6 @@ namespace PlayFlowMIDI
             SortPlaylist();
         }
 
-        private void PlaylistListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            UpdateTracksList();
-        }
-
         private List<TrackChunk> GetEffectiveTrackChunks(MidiFile midiFile)
         {
             var trackChunks = midiFile.GetTrackChunks().ToList();
@@ -2611,13 +2604,23 @@ namespace PlayFlowMIDI
             return song.DisabledTrackIndices.Contains(trackIndex);
         }
 
+        /// <summary>
+        /// Touches the Tracks panel only for a song that was really loaded (double-click or
+        /// the transport controls). Selecting a song with a single click never changes it.
+        /// </summary>
+        private void ShowTracksForSong(MidiSong? song)
+        {
+            _tracksSong = song;
+            UpdateTracksList();
+        }
+
         private void UpdateTracksList()
         {
             if (TracksStackPanel == null) return;
 
             TracksStackPanel.Children.Clear();
 
-            var selectedSong = PlaylistListView.SelectedItem as MidiSong;
+            var selectedSong = _tracksSong;
             if (selectedSong == null)
             {
                 TracksStackPanel.Children.Add(new System.Windows.Controls.TextBlock
@@ -2715,7 +2718,7 @@ namespace PlayFlowMIDI
         {
             if (sender is System.Windows.Controls.CheckBox clickedCheckBox && clickedCheckBox.Tag is int clickedTrackIndex)
             {
-                var selectedSong = PlaylistListView.SelectedItem as MidiSong;
+                var selectedSong = _tracksSong;
                 if (selectedSong != null)
                 {
                     if (!selectedSong.TrackStatesManuallySet)
@@ -3012,6 +3015,13 @@ namespace PlayFlowMIDI
             {
                 _masterPlaylist.Remove(item);
             }
+
+            if (_tracksSong != null && selectedItems.Contains(_tracksSong))
+            {
+                bool currentStillExists = _currentPlayingSong != null && !selectedItems.Contains(_currentPlayingSong);
+                ShowTracksForSong(currentStillExists ? _currentPlayingSong : null);
+            }
+
             UpdateCustomOrderIndices();
             SortPlaylist();
             SaveConfig();
@@ -3249,9 +3259,12 @@ namespace PlayFlowMIDI
             if (Mode36.IsChecked == true) Keys36.Visibility = Visibility.Visible;
         }
 
-        private void MainModeChanged(object sender, RoutedEventArgs e)
+        private async void MainModeChanged(object sender, RoutedEventArgs e)
         {
             if (_isLoading) return;
+
+            var profile = _config.Profiles.FirstOrDefault(p => p.Name == _config.LastSelectedProfile);
+            string oldMode = profile?.SelectedMode ?? string.Empty;
 
             if (MainMode37.IsChecked == true) Mode37.IsChecked = true;
             else if (MainMode36.IsChecked == true) Mode36.IsChecked = true;
@@ -3259,6 +3272,39 @@ namespace PlayFlowMIDI
 
             UpdateModeVisibility();
             SaveConfig();
+
+            string newMode = _config.Profiles
+                .FirstOrDefault(p => p.Name == _config.LastSelectedProfile)?.SelectedMode ?? string.Empty;
+
+            // The 15-key button label is reused for the transpose hint while the mode is active.
+            if (newMode != "15" && MainMode15 != null) MainMode15.Content = "15 Keys";
+
+            await ReapplyKeyModeAsync(oldMode, newMode);
+        }
+
+        /// <summary>
+        /// The 15-key layout folds the notes of the song while it is loaded, so moving between
+        /// 15-key and the full layouts has to rebuild the loaded song. Running this on a mode
+        /// change makes both orders equivalent: mode first then song, or song first then mode.
+        /// 37 and 36 share the same un-folded notes, so switching between them needs no reload.
+        /// </summary>
+        private async System.Threading.Tasks.Task ReapplyKeyModeAsync(string oldMode, string newMode)
+        {
+            if (string.Equals(oldMode, newMode, StringComparison.Ordinal)) return;
+
+            bool oldIs15 = oldMode == "15";
+            bool newIs15 = newMode == "15";
+            if (oldIs15 == newIs15) return;
+
+            var song = _currentPlayingSong;
+            if (song == null) return;
+
+            if (_playback == null) return;
+
+            var savedPosition = _playback.GetCurrentTime<MetricTimeSpan>();
+            bool wasPlaying = _playback.IsRunning;
+
+            await StartPlayback(song, wasPlaying, savedPosition);
         }
 
         private void UpdateMainModeVisibility(string profileName)
